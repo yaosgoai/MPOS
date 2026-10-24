@@ -160,6 +160,16 @@
       return;
     }
 
+    // 本機偏好設定（畫面縮放、條碼確認方式）：存在外殼網域，App 重開仍保留
+    if(d.method === 'prefSave' || d.method === 'prefLoad'){
+      try{
+        var pk = 'mpos_pref_' + String((d.params && d.params.key) || '').replace(/[^\w]/g, '');
+        if(d.method === 'prefSave') localStorage.setItem(pk, String((d.params && d.params.value) || ''));
+        reply(ev.source, ev.origin, d.id, true, d.method === 'prefLoad' ? {value: localStorage.getItem(pk) || ''} : {saved: true});
+      }catch(e){ reply(ev.source, ev.origin, d.id, false, '本機設定不可用：' + e.message); }
+      return;
+    }
+
     // 未結帳單據的本機暫存（外殼網域固定，GAS iframe 網域可能變動，所以多存一份在這裡）
     if(d.method === 'draftSave' || d.method === 'draftLoad' || d.method === 'draftClear'){
       try{
@@ -176,7 +186,7 @@
       reply(ev.source, ev.origin, d.id, false, '此功能需要在 MPOS Android App 內使用（目前是一般瀏覽器）。');
       return;
     }
-    if(['print','listPrinters','setPrinter','openDrawer','getInfo'].indexOf(d.method) < 0){
+    if(['print','listPrinters','setPrinter','openDrawer','getInfo','findCallRecordings','playRecording','pauseRecording','seekRecording','stopRecording','recordingStatus'].indexOf(d.method) < 0){
       reply(ev.source, ev.origin, d.id, false, '不支援的方法：' + d.method);
       return;
     }

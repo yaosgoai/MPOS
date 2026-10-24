@@ -34,6 +34,7 @@ import tw.com.acepillar.barcode.WebViewScanBridge;
  */
 public class MainActivity extends ComponentActivity {
     private static final int REQ_BT = 1001;
+    private static final int REQ_AUDIO = 1002;
     private WebView webView;
     private PosBridge bridge;
     private WebViewScanBridge scanBridge;
@@ -146,7 +147,14 @@ public class MainActivity extends ComponentActivity {
             if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) need.add(Manifest.permission.READ_PHONE_STATE);
             if (checkSelfPermission(Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) need.add(Manifest.permission.READ_CALL_LOG);
         }
+        // 來電錄音（小米通話錄音）：讀取音訊檔
+        if (!CallRecordings.hasPermission(this)) need.add(CallRecordings.permission());
         if (!need.isEmpty()) requestPermissions(need.toArray(new String[0]), REQ_BT);
+    }
+
+    /** 播放來電錄音時才發現沒有權限 → 再要求一次 */
+    public void requestRecordingPermission() {
+        if (!CallRecordings.hasPermission(this)) requestPermissions(new String[]{CallRecordings.permission()}, REQ_AUDIO);
     }
 
     @Override

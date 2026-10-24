@@ -25,6 +25,12 @@ const FAKE_ANDROID = () => {
           if (!window.__printer.address) { ok = false; result = '尚未選擇藍牙出單機'; }
           else result = { printer: window.__printer.name, bytes: 1234 };
         } else if (method === 'openDrawer') result = { printer: window.__printer.name };
+        else if (method === 'findCallRecordings') result = { recordings: window.__recordings || [] };
+        else if (method === 'playRecording') { window.__rec = { uri: params.uri, playing: true, position: 0, duration: 35000 }; result = Object.assign({ loaded: true, completed: false }, window.__rec); }
+        else if (method === 'pauseRecording') { window.__rec.playing = !window.__rec.playing; result = Object.assign({ loaded: true }, window.__rec); }
+        else if (method === 'seekRecording') { window.__rec.position = params.ms; result = Object.assign({ loaded: true }, window.__rec); }
+        else if (method === 'recordingStatus') result = window.__rec ? Object.assign({ loaded: true }, window.__rec) : { loaded: false };
+        else if (method === 'stopRecording') { window.__rec = null; result = { loaded: false }; }
         window.MPOSNative.onResult(id, ok, typeof result === 'string' ? result : JSON.stringify(result));
       }, 30);
     },
@@ -603,9 +609,136 @@ test('來電記錄分頁：列出來電，長按記錄新增來電點餐並帶�
   // 有新來電時，來電記錄頁會自動更新
   await frame.click('#orderOverlay .checkout-close');
   await frame.click('button[data-tab="calls"]');
+  await frame.locator('#callLogArea .call-log-row').first().waitFor();
   const before = await frame.locator('#callLogArea .call-log-row').count();
   await page.evaluate(() => window.MPOSNative.onEvent('incoming_call', JSON.stringify({ phone: '0911222333' })));
   await frame.waitForFunction((n) => document.querySelectorAll('#callLogArea .call-log-row').length === n + 1, before);
   assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('v1.5 版面：標題不顯示版本 / 藍牙（移到設定）、來電列沒有＋、訂單來源併入目前訂單、＋新購', async () => {
+  const { ctx, frame, errors } = await openPos(true);
+  assert.equal(await frame.locator('header #bridgeChip').count(), 0);
+  assert.doesNotMatch(await frame.innerText('header'), /cloud-|藍牙/);
+  assert.equal(await frame.locator('#tab-settings #bridgeChip').count(), 1);
+  assert.equal(await frame.locator('#tab-settings #gasVersionText').count(), 1);
+  assert.equal(await frame.locator('.call-bar button.call-add').count(), 0);
+  assert.equal((await frame.innerText('#newOrderBtn')).trim(), '＋新購');
+  await frame.click('#newOrderBtn');
+  await pickSource(frame, '來電點餐');
+  await frame.click('#orderOverlay .checkout-close');
+  assert.equal(await frame.locator('.pos-head #sourceBar').count(), 1, '訂單來源應在「目前訂單」標題列');
+  assert.match(await frame.innerText('.pos-head'), /目前訂單[\s\S]*來電點餐/);
+  await frame.click('#sourceBar');
+  await frame.waitForSelector('#sourceOverlay.show');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('v1.5 POS 剛好一頁：手機自動縮放不需上下捲動；可手動設定縮放比例', async () => {
+  for (const [w, hh] of [[393, 760], [360, 640], [412, 915], [800, 1280]]) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: hh }, isMobile: true, hasTouch: true });
+    await ctx.addInitScript(FAKE_ANDROID);
+    const page = await ctx.newPage();
+    await page.goto(h.shellUrl);
+    const frame = await waitPos(page);
+    // 有客戶列 + 多個品項時仍是一頁
+    await frame.evaluate(() => { customerPhone = '0910670803'; renderCart(); });
+    for (let i = 0; i < 6; i++) await frame.evaluate(() => { cart.push({ key: 'L' + (++lineSeq), id: 'custard', name: '卡士達', price: 35, qty: 1, notes: [], custom: '' }); renderCart(); });
+    await frame.waitForTimeout(100);
+    const r = await frame.evaluate(() => {
+      const se = document.scrollingElement || document.documentElement;
+      const btn = document.getElementById('resetBtn').getBoundingClientRect();
+      return { sh: se.scrollHeight, ih: innerHeight, sy: se.scrollHeight - se.clientHeight, zoom: curZoom, btnBottom: btn.bottom * curZoom, newBtn: document.getElementById('newOrderBtn').getBoundingClientRect().top };
+    });
+    assert.ok(r.sy <= 1, `${w}x${hh} 頁面可上下捲動 (${r.sh} > ${r.ih})`);
+    assert.ok(r.btnBottom <= hh + 1, `${w}x${hh} 下方按鈕超出畫面 (${r.btnBottom}) zoom=${r.zoom}`);
+    assert.ok(r.zoom <= 1 && r.zoom >= 0.55, `zoom=${r.zoom}`);
+    await ctx.close();
+  }
+  // 手動 80%
+  const { ctx, frame } = await openPos(true);
+  await frame.click('button[data-tab="settings"]');
+  await frame.fill('#pinInput', '1234');
+  await frame.click('#pinOverlay .blue-btn');
+  await frame.waitForSelector('#tab-settings.active');
+  await frame.selectOption('#uiZoomSelect', '0.8');
+  assert.equal(await frame.evaluate(() => curZoom), 0.8);
+  assert.equal(await frame.innerText('#uiZoomNow'), '80%');
+  await frame.click('.zoom-now button >> text=＋');
+  assert.equal(await frame.evaluate(() => curZoom), 0.85);
+  await ctx.close();
+});
+
+test('v1.5 條碼設定立即生效（不必按儲存）；訂單條碼刷完（無 Enter）直接查詢', async () => {
+  const { ctx, page, frame, errors } = await openPos(true, FAKE_SCANNER);
+  await setPrinter(page);
+  await frame.click('button[data-tab="settings"]');
+  await frame.fill('#pinInput', '1234');
+  await frame.click('#pinOverlay .blue-btn');
+  await frame.waitForSelector('#tab-settings.active');
+  await frame.selectOption('#sBarcodeConfirm', '0');
+  await frame.click('button[data-tab="pos"]');
+  await frame.click('#orderNoteInput + .scan-btn');
+  await frame.waitForFunction(() => window.__scanRequests.length === 1);
+  assert.equal((await frame.evaluate(() => window.__scanRequests[0])).confirm, false);
+  // 重新整理後仍記得（存在外殼）
+  await page.reload();
+  const f2 = await waitPos(page);
+  assert.equal(await f2.evaluate(() => barcodeConfirmOn()), false);
+
+  // 掛單後，條碼槍刷 13 碼（沒有 Enter）→ 自動叫回
+  await addLine(f2, 'custard', 1);
+  await f2.click('#holdBtn');
+  await f2.click('#quickPayPrintBtn');
+  await f2.waitForFunction(() => document.getElementById('posMsg').innerText.includes('已掛單'));
+  const held = JSON.parse(JSON.stringify(h.g.apiOrders(''))).orders[0];
+  await f2.fill('#orderCodeInput', h.g.barcodeNoToEan13(held.barcode_no));
+  await f2.waitForFunction(() => document.getElementById('loadedOrderTag').innerText.includes('未付款'));
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('v1.5 來電錄音：長按來電記錄直接播放錄音（小米通話錄音），可暫停 / 停止，關閉時停止', async () => {
+  h.g.apiRegisterCall('0910670803');
+  const { ctx, page, frame, errors } = await openPos(true);
+  await page.evaluate(() => {
+    window.__recordings = [
+      { uri: 'content://media/external/audio/media/77', name: '0910670803(0910670803)_20261024174233.mp3', time: Date.now(), duration: 35000, phone_match: true },
+      { uri: 'content://media/external/audio/media/70', name: '0910670803(0910670803)_20261020100000.mp3', time: Date.now() - 4 * 86400000, duration: 12000, phone_match: true },
+    ];
+  });
+  await frame.click('button[data-tab="calls"]');
+  const row = frame.locator('#callLogArea .call-log-row', { hasText: '0910-670-803' }).first();
+  await row.waitFor();
+  await row.click({ button: 'right' });
+  await frame.waitForSelector('#callOverlay.show');
+  await frame.waitForSelector('#recPlayer', { state: 'visible' });
+  let calls = await page.evaluate(() => window.__nativeCalls.map((c) => c.method + ':' + (c.params.uri || c.params.phone || '')));
+  assert.ok(calls.includes('findCallRecordings:0910670803'));
+  assert.ok(calls.includes('playRecording:content://media/external/audio/media/77'), '應自動播放最接近的錄音');
+  assert.equal(await frame.locator('#recList .rec-item').count(), 2);
+  await frame.click('#recPlayBtn');
+  await frame.waitForFunction(() => document.getElementById('recPlayBtn').innerText === '繼續');
+  // 改播另一個
+  await frame.click('#recList .rec-item[data-i="1"]');
+  await frame.waitForFunction(() => document.querySelector('#recList .rec-item[data-i="1"]').classList.contains('active'));
+  // 關閉 → 停止播放
+  await frame.click('#callOverlay .checkout-close');
+  await page.waitForFunction(() => window.__nativeCalls.some((c) => c.method === 'stopRecording'));
+  // 選單其他功能仍在
+  await row.click({ button: 'right' });
+  await frame.click('#callNewOrderBtn');
+  await frame.waitForSelector('#orderOverlay.show');
+  assert.equal(await frame.innerText('#customerPhoneText'), '0910-670-803');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('v1.5 來電錄音：一般瀏覽器不顯示錄音區', async () => {
+  const { ctx, frame } = await openPos(false);
+  await frame.evaluate(() => openCallMenu({ phone: '0910670803', phone_display: '0910-670-803', called_at: '2026-10-24 17:42:00' }, { autoplay: true }));
+  assert.equal(await frame.isVisible('#recBox'), false);
   await ctx.close();
 });

@@ -11,13 +11,7 @@
 <div id="loadingMask" class="loading-mask">POS 資料載入中...</div>
 
 <header>
-  <div>
-    <div class="header-title"><span id="shopNameTitle">茉莉花鯛魚燒</span> POS 出單系統
-      <span style="font-size:13px;opacity:.75"><?= appVersion ?></span>
-      <span id="bridgeChip" class="bridge-chip">偵測列印環境...</span>
-    </div>
-    <div class="header-sub">點餐 → 當日流水號 → 藍牙出單 → 完成</div>
-  </div>
+  <div class="header-title"><span id="shopNameTitle">茉莉花鯛魚燒</span> POS 出單系統</div>
   <div class="header-sub" style="display:none"><span id="shopAddressHeader"></span><span id="shopPhoneHeader"></span></div>
 </header>
 
@@ -32,7 +26,6 @@
 <div id="callBar" class="call-bar">
   <span class="call-bar-title">來電</span>
   <div id="callList" class="call-list"><span class="call-empty">今日尚無來電</span></div>
-  <button class="call-add" title="手動輸入電話" onclick="manualCall()">＋</button>
 </div>
 
 <!-- ================= POS ================= -->
@@ -40,26 +33,31 @@
   <div class="pos-single">
     <section class="panel">
       <div class="pos-head">
-        <h2 class="section-title" style="margin:0;border:0">目前訂單</h2>
-        <button id="newOrderBtn" class="main-btn new-order-btn" onclick="openOrderPicker()">＋ 新增訂購</button>
+        <div class="pos-head-left">
+          <div class="pos-title-row">
+            <h2 class="section-title pos-title">目前訂單</h2>
+            <button type="button" id="sourceBar" class="source-chip" style="display:none" onclick="openSourcePicker(false)" title="點一下變更訂單來源"><b id="sourceName"></b><span class="chg">變更</span></button>
+            <span id="loadedOrderTag" class="loaded-tag" style="display:none"></span>
+          </div>
+          <span id="draftState" class="draft-state"></span>
+        </div>
+        <button id="newOrderBtn" class="main-btn new-order-btn" onclick="openOrderPicker()">＋新購</button>
       </div>
       <div class="order-code-row">
         <label for="orderCodeInput">訂單條碼</label>
-        <input id="orderCodeInput" data-scan-submit="loadOrderByCode" placeholder="輸入訂單號碼或刷訂單條碼" onkeydown="if(event.key==='Enter')loadOrderByCode()">
+        <input id="orderCodeInput" data-scan-submit="loadOrderByCode" placeholder="輸入訂單號碼或刷訂單條碼" onkeydown="if(event.key==='Enter'){event.preventDefault();loadOrderByCode();}" oninput="orderCodeAuto()">
         <button class="main-btn gray-btn" onclick="loadOrderByCode()">查詢</button>
-      </div>
-      <div id="sourceBar" class="source-bar" style="display:none">
-        <span>訂單來源：</span><b id="sourceName"></b>
-        <button class="small-btn gray-btn" onclick="openSourcePicker(false)">變更</button>
-        <span id="loadedOrderTag" class="loaded-tag" style="display:none"></span>
-        <span id="draftState" class="draft-state">已暫存於本機</span>
       </div>
       <div id="customerBar" class="customer-bar" style="display:none">
         <span>客戶：</span><b id="customerPhoneText"></b>
         <input id="customerNameInput" data-noscan maxlength="30" placeholder="客戶名稱（可之後再補）" oninput="customerName=this.value;Draft.save()">
         <button class="small-btn blue-btn" onclick="showHistory(customerPhone)">歷史</button>
       </div>
-      <div id="cartArea" class="cart-empty">尚未點選商品，請按「＋ 新增訂購」</div>
+      <div class="pos-scroll" id="posScroll">
+      <div id="cartArea" class="cart-empty">尚未點選商品，請按「＋新購」</div>
+      <div id="posMsg" class="message"></div>
+      <div id="receiptPreview" class="receipt-preview"></div>
+      </div>
       <div class="total-box"><div class="total-label">總金額</div><div class="total-value" id="totalValue">0 元</div></div>
       <h2 class="section-title" style="margin-top:14px;">整張訂單備註</h2>
       <textarea id="orderNoteInput" placeholder="整張訂單的備註，例如：18:30 取餐" oninput="Draft.save()"></textarea>
@@ -69,8 +67,6 @@
         <button id="holdBtn" class="main-btn preview-btn" onclick="openQuickPay('hold')">掛單</button>
         <button id="resetBtn" class="main-btn clear-btn" onclick="resetDraft()">重置</button>
       </div>
-      <div id="posMsg" class="message"></div>
-      <div id="receiptPreview" class="receipt-preview"></div>
     </section>
   </div>
 </section>
@@ -110,7 +106,7 @@
 <div id="orderOverlay" class="order-overlay">
   <div class="order-modal order-modal-menu">
     <div class="checkout-head">
-      <div class="checkout-title" id="pickerTitle">新增訂購：選擇商品</div>
+      <div class="checkout-title" id="pickerTitle">新購：選擇商品</div>
       <button class="checkout-close" onclick="closeOrderPicker()">關閉</button>
     </div>
     <div class="order-menu-only"><div id="menuArea"></div></div>
@@ -153,6 +149,16 @@
     <div class="field-grid call-name-row" data-noscan>
       <div style="grid-column:1/-1"><label>客戶名稱（可空白，之後再補）</label><input id="callNameInput" maxlength="30" placeholder="例如：王先生"></div>
     </div>
+    <div id="recBox" class="rec-box" style="display:none">
+      <div class="rec-head"><b>來電錄音</b><span id="recState" class="rec-state"></span></div>
+      <div id="recList" class="rec-list"></div>
+      <div id="recPlayer" class="rec-player" style="display:none">
+        <button type="button" id="recPlayBtn" class="small-btn blue-btn" onclick="recToggle()">暫停</button>
+        <input type="range" id="recSeek" min="0" max="1000" value="0" data-noscan oninput="recSeekPreview()" onchange="recSeek()">
+        <span id="recTime" class="rec-time">0:00 / 0:00</span>
+        <button type="button" class="small-btn danger-btn" onclick="recStop()">停止</button>
+      </div>
+    </div>
     <div class="call-actions">
       <button id="callNewOrderBtn" class="source-btn" onclick="callNewOrder()">1. 直接新增來電點餐</button>
       <button id="callHistoryBtn" class="source-btn" onclick="callShowHistory()">2. 查詢歷史交易品項</button>
@@ -184,7 +190,7 @@
         <div><label>&nbsp;</label><button class="main-btn blue-btn" onclick="loadCallLog()">重新整理</button></div>
         <div><label>&nbsp;</label><button class="main-btn gray-btn" onclick="manualCall()">＋ 手動記錄來電</button></div>
       </div>
-      <div class="hint">長按記錄：新增來電點餐（自動帶入電話）、查詢歷史交易品項、補客戶名稱。</div>
+      <div class="hint">長按記錄：直接播放這通來電錄音（小米通話錄音），並可新增來電點餐（自動帶入電話）、查詢歷史交易品項、補客戶名稱。</div>
       <div id="callLogArea"></div>
     </section>
   </div>
@@ -276,6 +282,25 @@
 <section id="tab-settings" class="tab-page">
   <div class="admin-layout">
     <section class="panel">
+      <h2 class="section-title">系統資訊與本機畫面</h2>
+      <div class="sys-info">
+        <span>版本 <b id="gasVersionText"><?= appVersion ?></b></span>
+        <span id="appVersionText"></span>
+        <span id="bridgeChip" class="bridge-chip">偵測列印環境...</span>
+      </div>
+      <div class="field-grid" data-noscan>
+        <div><label>POS 畫面縮放（本機）</label>
+          <select id="uiZoomSelect" onchange="setUiZoom(this.value)">
+            <option value="auto">自動符合螢幕</option>
+            <option value="0.6">60%</option><option value="0.7">70%</option><option value="0.8">80%</option><option value="0.9">90%</option>
+            <option value="1">100%</option><option value="1.1">110%</option><option value="1.2">120%</option><option value="1.3">130%</option><option value="1.5">150%</option>
+          </select></div>
+        <div><label>目前縮放</label><div class="zoom-now"><button type="button" class="small-btn gray-btn" onclick="stepUiZoom(-0.05)">－</button><b id="uiZoomNow">100%</b><button type="button" class="small-btn gray-btn" onclick="stepUiZoom(0.05)">＋</button></div></div>
+        <div><label>條碼輸入（立即生效）</label><select id="sBarcodeConfirm" onchange="setBarcodeConfirm(this.value)"><option value="1">開窗確認再帶回</option><option value="0">直接帶回</option></select></div>
+      </div>
+      <div class="hint">「自動符合螢幕」會把 POS 點餐畫面縮放到剛好一頁，不需上下捲動；訂單品項多時只有品項清單會在框內捲動。</div>
+    </section>
+    <section class="panel">
       <h2 class="section-title">藍牙出單機（Android App）</h2>
       <div class="field-grid">
         <div><label>已配對藍牙裝置</label><select id="btDeviceSelect"></select></div>
@@ -307,7 +332,6 @@
         <div><label>EAN13 內部前綴</label><input id="sEanPrefix" maxlength="5"></div>
         <div><label>條碼最大寬度 %</label>
           <select id="sBarcodeWidth"><option>70</option><option>80</option><option>85</option><option>88</option><option>90</option><option>92</option><option>95</option><option>100</option></select></div>
-        <div><label>條碼輸入</label><select id="sBarcodeConfirm"><option value="1">掃到後開窗確認再帶回</option><option value="0">掃到直接帶回</option></select></div>
         <div><label>單號同步條碼</label><select id="sAlwaysBarcode"><option value="1">開啟</option><option value="0">關閉</option></select></div>
         <div><label>結帳後開錢箱</label><select id="sOpenDrawer"><option value="0">關閉</option><option value="1">開啟</option></select></div>
         <div><label>自動切紙</label><select id="sCutPaper"><option value="1">開啟</option><option value="0">關閉</option></select></div>
@@ -577,7 +601,7 @@ function scanErrorText(code){
 async function scanInto(el){
   if(typeof BarcodeScan==='undefined'){ toast('條碼模組未載入'); return; }
   var r;
-  try{ r=await BarcodeScan.scanLive({confirm:String((appData.settings||{}).barcode_confirm)!=='0', scanPageUrl:scanPageUrl(), hint:'把條碼放進框內並對準十字'}); }
+  try{ r=await BarcodeScan.scanLive({confirm:barcodeConfirmOn(), scanPageUrl:scanPageUrl(), hint:'把條碼放進框內並對準十字'}); }
   catch(e){ r={status:'error', error:String((e && e.message) || e)}; }
   if(!r || r.status==='cancel') return;
   if(r.status!=='ok'){ toast(scanErrorText(r.error), 3000); return; }
@@ -617,7 +641,7 @@ async function bootstrap(){
 window.addEventListener('load', async function(){
   attachScanButtons(document);
   detectBridge();
-  try{ await bootstrap(); await Draft.restore(); refreshCalls(); }
+  try{ await bootstrap(); await prefLoadAll(); applySettingsToUi(); syncUiPrefControls(); fitScreen(); await Draft.restore(); refreshCalls(); }
   catch(e){ $('loadingMask').innerText='資料載入失敗：'+e.message+'\n請確認已執行 setup() 並重新整理。'; return; }
   $('loadingMask').style.display='none';
   window.__MPOS_READY__ = true;
@@ -650,7 +674,8 @@ async function switchTab(name){
   $('tab-'+name).classList.add('active');
   if(name==='admin' && $('admin-orders').classList.contains('active')) loadOrders();
   if(name==='calls') loadCallLog();
-  if(name==='settings') loadBtDevices();
+  if(name==='settings'){ loadBtDevices(); syncUiPrefControls(); }
+  scheduleFit();
 }
 function switchAdminSection(name, btn){
   document.querySelectorAll('.admin-subtab').forEach(function(b){b.classList.remove('active');});
@@ -692,7 +717,7 @@ function openOrderPicker(key){
     return;
   }
   picker={key:null,id:null,qty:1,notes:[],custom:''};
-  $('pickerTitle').innerText='新增訂購：選擇商品';
+  $('pickerTitle').innerText='新購：選擇商品';
   renderNotes();
   renderPickerMenu();
   $('orderOverlay').classList.add('show');
@@ -721,7 +746,7 @@ function closeItemDialog(){ $('itemOverlay').classList.remove('show'); picker=nu
 function backToMenu(){
   picker.custom=$('lineNoteInput').value.trim();
   $('itemOverlay').classList.remove('show');
-  $('pickerTitle').innerText = picker.key ? '修改訂購項目：更換商品' : '新增訂購：選擇商品';
+  $('pickerTitle').innerText = picker.key ? '修改訂購項目：更換商品' : '新購：選擇商品';
   renderPickerMenu();
   $('orderOverlay').classList.add('show');
 }
@@ -757,17 +782,18 @@ function deletePickerLine(){ if(picker&&picker.key){ cart=cart.filter(function(l
 /* 主畫面訂單清單 */
 function changeQty(key,d){ cart.forEach(function(l){ if(l.key===key) l.qty+=d; }); cart=cart.filter(function(l){return l.qty>0;}); renderCart(); }
 function renderCart(){
-  $('sourceBar').style.display = (orderSource || loadedOrder) ? 'flex' : 'none';
-  $('sourceName').innerText = orderSource;
+  $('sourceBar').style.display = (orderSource || loadedOrder) ? 'inline-flex' : 'none';
+  $('sourceName').innerText = orderSource || '選擇來源';
   $('loadedOrderTag').style.display = loadedOrder ? 'inline-block' : 'none';
   $('loadedOrderTag').innerText = loadedOrder ? '叫回單號 '+loadedOrder.order_no+'（未付款）' : '';
   $('customerBar').style.display = customerPhone ? 'flex' : 'none';
+  scheduleFit();
   $('customerPhoneText').innerText = fmtPhone(customerPhone);
   if(document.activeElement!==$('customerNameInput')) $('customerNameInput').value = customerName || '';
-  $('newOrderBtn').innerText = cartItems().length ? '＋ 加點' : '＋ 新增訂購';
+  $('newOrderBtn').innerText = '＋新購';
   Draft.save();
   var items=cartItems(), area=$('cartArea');
-  if(!items.length){ area.className='cart-empty'; area.innerHTML='尚未點選商品，請按「＋ 新增訂購」'; $('totalValue').innerText='0 元'; return; }
+  if(!items.length){ area.className='cart-empty'; area.innerHTML='尚未點選商品，請按「＋新購」'; $('totalValue').innerText='0 元'; return; }
   var html='';
   items.forEach(function(l){
     var k=escapeHtml(l.key), n=lineNote(l);
@@ -830,7 +856,7 @@ var Draft={
       var d=self.data(), json=JSON.stringify(d), empty=!d.cart.length && !d.source && !d.note.trim() && !d.phone && !d.loaded;
       try{ if(empty) localStorage.removeItem(DRAFT_KEY); else localStorage.setItem(DRAFT_KEY, json); }catch(e){}
       if(Bridge.inShell()) Bridge.call(empty?'draftClear':'draftSave', empty?{}:{json:json}, 3000).catch(function(){});
-      $('draftState').innerText = empty ? '' : '已暫存於本機 '+new Date().toTimeString().slice(0,8);
+      $('draftState').innerText = empty ? '' : '已暫存 '+new Date().toTimeString().slice(0,8);
     }, 150);
   },
   clear:function(){
@@ -866,7 +892,7 @@ var Draft={
 var quickPayMode='pay';
 function openQuickPay(mode){
   quickPayMode = mode==='hold' ? 'hold' : 'pay';
-  if(!cartItems().length){ showMsg('posMsg','err','尚未點選商品，請先按「＋ 新增訂購」。'); return; }
+  if(!cartItems().length){ showMsg('posMsg','err','尚未點選商品，請先按「＋新購」。'); return; }
   if(!orderSource){ openSourcePicker(false); return; }
   if(quickPayMode==='hold' && loadedOrder){ /* 叫回的單再掛單＝更新內容 */ }
   var hold = quickPayMode==='hold';
@@ -923,9 +949,20 @@ async function createOrder(printFlag, pay, hold){
 
 /* ---------- 訂單條碼：叫回訂單（未付款 → 帶回結帳；已付款 → 檢視 / 補印） ---------- */
 function draftDirty(){ return cartItems().length>0 || !!loadedOrder; }
+var orderCodeTimer=null;
+/** 條碼槍刷 13 碼訂單條碼（沒有送 Enter 也可以）→ 直接查詢 */
+function orderCodeAuto(){
+  clearTimeout(orderCodeTimer);
+  var v=$('orderCodeInput').value.trim();
+  if(/^\d{13}$/.test(v)) orderCodeTimer=setTimeout(loadOrderByCode, 250);
+}
+var orderCodeBusy=false;
 async function loadOrderByCode(){
+  clearTimeout(orderCodeTimer);
+  if(orderCodeBusy) return;
   var code=$('orderCodeInput').value.trim();
   if(!code){ toast('請輸入訂單號碼或刷訂單條碼'); return; }
+  orderCodeBusy=true;
   try{
     var r=await api('apiLoadOrder', code);
     var o=r.order;
@@ -943,6 +980,7 @@ async function loadOrderByCode(){
     renderCart();
     showMsg('posMsg','ok','已叫回 '+o.order_no+'（未付款），可修改後按「找零結帳」或「結帳」。');
   }catch(e){ showMsg('posMsg','err',e.message); }
+  finally{ orderCodeBusy=false; }
 }
 function orderItemsHtml(items){
   return '<table class="order-items-table"><thead><tr><th>品名</th><th>數量</th><th>小計</th></tr></thead><tbody>'+
@@ -1008,7 +1046,7 @@ async function loadCallLog(){
         '<span class="cl-meta">來電 '+c.call_count+' 次・訂單 '+c.order_count+' 筆</span></button>';
     }).join('');
     el.querySelectorAll('.call-log-row').forEach(function(btn){
-      bindLongPress(btn, function(){ openCallMenu(list[+btn.dataset.i]); }, function(){ toast('長按記錄：新增來電點餐 / 查詢歷史'); });
+      bindLongPress(btn, function(){ openCallMenu(list[+btn.dataset.i], {autoplay:true}); }, function(){ toast('長按記錄：播放來電錄音 / 新增來電點餐 / 查詢歷史'); });
     });
   }catch(e){ el.innerHTML='<div class="message err" style="display:block">'+escapeHtml(e.message)+'</div>'; }
 }
@@ -1017,13 +1055,90 @@ function manualCall(){
   if(p) onIncomingCall(p);
 }
 var callTarget=null;
-function openCallMenu(c){
+function openCallMenu(c, opts){
   callTarget=c;
-  $('callTitle').innerText='來電 '+(c.phone_display||fmtPhone(c.phone));
+  $('callTitle').innerText='來電 '+(c.phone_display||fmtPhone(c.phone))+(c.called_at?' '+String(c.called_at).slice(5,16):'');
   $('callNameInput').value=c.name||'';
   $('callOverlay').classList.add('show');
+  recFind(c, !!(opts && opts.autoplay));
 }
-function closeCallMenu(){ $('callOverlay').classList.remove('show'); }
+function closeCallMenu(){ $('callOverlay').classList.remove('show'); recStop(true); }
+
+/* ---------- 來電錄音（小米通話錄音，App 端搜尋 + 播放） ---------- */
+var rec={list:[], idx:-1, timer:null, dur:0, target:null};
+function parseCallTime(t){
+  var m=String(t||'').match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+  return m ? new Date(+m[1], +m[2]-1, +m[3], +m[4], +m[5], +(m[6]||0)).getTime() : 0;
+}
+function fmtDur(ms){ var s=Math.max(0, Math.round((ms||0)/1000)); return Math.floor(s/60)+':'+('0'+(s%60)).slice(-2); }
+function fmtRecTime(ms){ if(!ms) return ''; var d=new Date(ms); return (d.getMonth()+1)+'/'+d.getDate()+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
+async function recFind(c, autoplay){
+  var box=$('recBox');
+  rec.list=[]; rec.idx=-1; rec.target=c;
+  $('recList').innerHTML=''; $('recPlayer').style.display='none';
+  if(!Bridge.isNative()){ box.style.display='none'; return; }
+  box.style.display='block';
+  $('recState').innerText='搜尋錄音中...';
+  try{
+    var r=await Bridge.call('findCallRecordings', {phone:c.phone, at:parseCallTime(c.called_at)}, 20000);
+    if(rec.target!==c) return;
+    rec.list=(r && r.recordings)||[];
+    if(!rec.list.length){ $('recState').innerText='找不到這通電話的錄音（請確認小米「通話錄音」已開啟；通話結束後才會產生錄音檔）'; return; }
+    $('recState').innerText='找到 '+rec.list.length+' 個錄音';
+    $('recList').innerHTML=rec.list.map(function(x,i){
+      return '<button type="button" class="rec-item" data-i="'+i+'"><span class="rec-ico">▶</span><b>'+escapeHtml(fmtRecTime(x.time))+'</b> '+
+        (x.duration?escapeHtml(fmtDur(x.duration)):'')+(x.phone_match?'':' <span class="rec-near">時間相近</span>')+'<small>'+escapeHtml(x.name)+'</small></button>';
+    }).join('');
+    $('recList').querySelectorAll('.rec-item').forEach(function(b){ b.addEventListener('click', function(){ recPlay(+b.dataset.i); }); });
+    if(autoplay) recPlay(0);
+  }catch(e){ if(rec.target===c) $('recState').innerText='讀取錄音失敗：'+e.message; }
+}
+async function recPlay(i){
+  var x=rec.list[i]; if(!x) return;
+  try{
+    var st=await Bridge.call('playRecording', {uri:x.uri}, 15000);
+    rec.idx=i;
+    $('recList').querySelectorAll('.rec-item').forEach(function(b){ b.classList.toggle('active', +b.dataset.i===i); });
+    $('recPlayer').style.display='flex';
+    $('recState').innerText='播放中：'+fmtRecTime(x.time);
+    recShow(st); recPoll();
+  }catch(e){ $('recState').innerText='無法播放：'+e.message; }
+}
+function recShow(st){
+  if(!st) return;
+  rec.dur=st.duration||0;
+  if(!rec.seeking) $('recSeek').value = rec.dur ? Math.round((st.position||0)/rec.dur*1000) : 0;
+  $('recTime').innerText=fmtDur(st.position)+' / '+fmtDur(st.duration);
+  $('recPlayBtn').innerText = st.playing ? '暫停' : (st.completed ? '重播' : '繼續');
+  if(st.completed) $('recState').innerText='播放完畢';
+}
+function recPoll(){
+  clearInterval(rec.timer);
+  rec.timer=setInterval(async function(){
+    if(!$('callOverlay').classList.contains('show')){ clearInterval(rec.timer); return; }
+    try{ var st=await Bridge.call('recordingStatus', {}, 5000); recShow(st); if(!st.loaded) clearInterval(rec.timer); }catch(e){ clearInterval(rec.timer); }
+  }, 500);
+}
+async function recToggle(){
+  try{
+    if($('recPlayBtn').innerText==='重播'){ await Bridge.call('seekRecording', {ms:0}, 5000); }
+    recShow(await Bridge.call('pauseRecording', {}, 5000)); recPoll();
+  }catch(e){ toast(e.message); }
+}
+function recSeekPreview(){ rec.seeking=true; $('recTime').innerText=fmtDur($('recSeek').value/1000*rec.dur)+' / '+fmtDur(rec.dur); }
+async function recSeek(){
+  rec.seeking=false;
+  try{ recShow(await Bridge.call('seekRecording', {ms:Math.round($('recSeek').value/1000*rec.dur)}, 5000)); }catch(e){}
+}
+async function recStop(silent){
+  clearInterval(rec.timer);
+  if(rec.idx<0) return;
+  rec.idx=-1;
+  $('recPlayer').style.display='none';
+  $('recList').querySelectorAll('.rec-item').forEach(function(b){ b.classList.remove('active'); });
+  if(!silent) $('recState').innerText='已停止';
+  try{ await Bridge.call('stopRecording', {}, 5000); }catch(e){}
+}
 async function callSaveName(){
   try{ await api('apiSaveCustomer', callTarget.phone, $('callNameInput').value); closeCallMenu(); refreshCalls(); toast('客戶名稱已儲存'); }catch(e){ alert(e.message); }
 }
@@ -1074,7 +1189,7 @@ function reorder(i){
 /* ---------- 結帳鍵盤 ---------- */
 function openCheckout(){
   $('orderOverlay').classList.remove('show');
-  if(!cartItems().length){showMsg('posMsg','err','尚未點選商品，請先按「＋ 新增訂購」。');return;}
+  if(!cartItems().length){showMsg('posMsg','err','尚未點選商品，請先按「＋新購」。');return;}
   if(!orderSource){ openSourcePicker(false); return; }
   checkoutCash='';checkoutChangeAmount=0;$('checkoutMsg').innerText='';
   $('checkoutTotal').innerText=money(total());
@@ -1199,6 +1314,67 @@ async function loadDbInfo(){
   try{ var r=await api('apiDbInfo', await askPin()); showMsg('systemMsg','ok','版本：'+r.version+'\n資料庫試算表：'+r.spreadsheet_url+'\nGAS 網址：'+r.web_app_url); }catch(e){ showMsg('systemMsg','err',e.message); }
 }
 
+/* ---------- 本機偏好：畫面縮放、條碼確認方式（每台裝置各自記錄） ---------- */
+var UI_PREF={zoom:'auto', bc:''};
+function prefSet(k, v){
+  UI_PREF[k]=String(v==null?'':v);
+  try{ localStorage.setItem('mpos_pref_'+k, UI_PREF[k]); }catch(e){}
+  if(Bridge.inShell()) Bridge.call('prefSave', {key:k, value:UI_PREF[k]}, 3000).catch(function(){});
+}
+async function prefLoadAll(){
+  var keys=Object.keys(UI_PREF);
+  keys.forEach(function(k){ try{ var v=localStorage.getItem('mpos_pref_'+k); if(v) UI_PREF[k]=v; }catch(e){} });
+  if(Bridge.inShell()){
+    await Promise.all(keys.map(function(k){
+      return Bridge.call('prefLoad', {key:k}, 2500).then(function(r){ if(r && r.value) UI_PREF[k]=r.value; }).catch(function(){});
+    }));
+  }
+}
+function barcodeConfirmOn(){
+  var v=UI_PREF.bc;
+  if(v===''||v==null) v=(appData.settings||{}).barcode_confirm;
+  if(v===undefined||v===null||v==='') return true;
+  return !(v===0 || v===false || /^(0|false|no|off)$/i.test(String(v).trim()));
+}
+function setBarcodeConfirm(v){
+  prefSet('bc', v==='0'?'0':'1');
+  toast(v==='0' ? '條碼輸入：掃到直接帶回（已生效）' : '條碼輸入：掃到後開窗確認（已生效）', 1800);
+}
+function syncUiPrefControls(){
+  $('sBarcodeConfirm').value = barcodeConfirmOn() ? '1' : '0';
+  var sel=$('uiZoomSelect'), z=UI_PREF.zoom||'auto';
+  if(z!=='auto' && !Array.prototype.some.call(sel.options, function(o){ return o.value===z; })){
+    var o=document.createElement('option'); o.value=z; o.textContent=Math.round(parseFloat(z)*100)+'%'; sel.appendChild(o);
+  }
+  sel.value=z;
+  $('uiZoomNow').innerText=Math.round(curZoom*100)+'%';
+  if(Bridge.info && Bridge.info.app_version) $('appVersionText').innerText='App '+Bridge.info.app_version;
+}
+var curZoom=1, fitRaf=0;
+function applyZoom(z){
+  curZoom=z;
+  document.body.style.zoom = z;
+  document.body.style.height = (window.innerHeight / z) + 'px';
+  var n=$('uiZoomNow'); if(n) n.innerText=Math.round(z*100)+'%';
+}
+/** POS 點餐剛好佔滿一頁：自動模式依「固定區塊 + 最少品項區」的高度算出縮放比例 */
+function fitScreen(){
+  var mode=UI_PREF.zoom||'auto';
+  if(mode!=='auto'){ applyZoom(Math.min(1.6, Math.max(0.5, parseFloat(mode)||1))); return; }
+  if(!$('tab-pos').classList.contains('active')) return;   // 只依 POS 畫面計算，其他分頁沿用
+  applyZoom(1);
+  document.body.classList.add('measuring');
+  var need=document.body.scrollHeight;
+  document.body.classList.remove('measuring');
+  var z=Math.min(1, Math.max(0.55, Math.floor(window.innerHeight/need*100)/100));
+  applyZoom(z);
+}
+function scheduleFit(){ cancelAnimationFrame(fitRaf); fitRaf=requestAnimationFrame(function(){ fitRaf=0; fitScreen(); }); }
+function setUiZoom(v){ prefSet('zoom', v); fitScreen(); syncUiPrefControls(); }
+function stepUiZoom(d){ setUiZoom(String(Math.round(Math.min(1.6, Math.max(0.5, curZoom+d))*100)/100)); }
+window.addEventListener('resize', scheduleFit);
+window.addEventListener('orientationchange', function(){ setTimeout(fitScreen, 300); });
+
 /* ---------- 設定 ---------- */
 var SETTING_FIELDS = {
   shop_name:'sShopName', shop_address:'sShopAddress', shop_phone:'sShopPhone', footer_msg:'sFooterMsg',
@@ -1210,6 +1386,7 @@ var SETTING_FIELDS = {
 function applySettingsToUi(){
   var s=appData.settings||{};
   Object.keys(SETTING_FIELDS).forEach(function(k){ var el=$(SETTING_FIELDS[k]); if(el && s[k]!==undefined) el.value=String(s[k]); });
+  $('sBarcodeConfirm').value = barcodeConfirmOn() ? '1' : '0';
 }
 function getSettingsFromUi(){ var o={}; Object.keys(SETTING_FIELDS).forEach(function(k){ o[k]=$(SETTING_FIELDS[k]).value; }); return o; }
 async function saveSettings(){

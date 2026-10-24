@@ -21,6 +21,7 @@ public class PosBridge {
     private static final String TAG = "MPOS";
     private final WebView webView;
     private final BluetoothPrinter printer;
+    private final CallRecordings recordings;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final String allowedOrigin;
@@ -29,6 +30,7 @@ public class PosBridge {
     public PosBridge(WebView webView, BluetoothPrinter printer, String shellUrl) {
         this.webView = webView;
         this.printer = printer;
+        this.recordings = new CallRecordings(webView.getContext());
         this.allowedOrigin = originOf(shellUrl);
     }
 
@@ -68,6 +70,7 @@ public class PosBridge {
             o.put("trusted", trusted());
             o.put("call_monitor", CallMonitor.hasTelephony(webView.getContext()));
             o.put("call_permission", CallMonitor.hasPermissions(webView.getContext()));
+            o.put("recording_permission", CallRecordings.hasPermission(webView.getContext()));
         } catch (Exception ignored) { }
         return o.toString();
     }
@@ -119,6 +122,25 @@ public class PosBridge {
                 printer.write(EscPosEncoder.cashDrawerCommand());
                 r.put("printer", printer.getName());
                 return r;
+            case "findCallRecordings":
+                try {
+                    return recordings.find(params.optString("phone"), params.optLong("at", 0));
+                } catch (SecurityException se) {
+                    main.post(() -> {
+                        if (webView.getContext() instanceof MainActivity) ((MainActivity) webView.getContext()).requestRecordingPermission();
+                    });
+                    throw se;
+                }
+            case "playRecording":
+                return recordings.play(params.optString("uri"));
+            case "pauseRecording":
+                return recordings.togglePause();
+            case "seekRecording":
+                return recordings.seek(params.optInt("ms", 0));
+            case "stopRecording":
+                return recordings.stop();
+            case "recordingStatus":
+                return recordings.status();
             default:
                 throw new IllegalArgumentException("不支援的方法：" + method);
         }
@@ -138,6 +160,7 @@ public class PosBridge {
     }
 
     public void shutdown() {
+        recordings.release();
         worker.shutdownNow();
         printer.closeQuietly();
     }

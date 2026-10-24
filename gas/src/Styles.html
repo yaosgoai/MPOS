@@ -260,4 +260,63 @@ input,select,textarea{font-size:16px} /* 16px 以上避免手機自動放大 */
 .cl-phone{font-weight:900;color:var(--blue);font-size:var(--fs-lg)}
 .cl-name{font-weight:900;color:var(--main2)}
 .cl-meta{grid-column:1/-1;font-size:var(--fs-xs);color:var(--muted)}
+
+/* ---- v1.5：整頁不捲動（POS 剛好一頁）、縮放、訂單來源併入標題、來電錄音 ---- */
+html,body{height:100%}
+body{display:flex;flex-direction:column;overflow:hidden}
+body > header, body > .tabs, body > .call-bar{flex:none}
+header{padding:6px clamp(10px,2vw,16px)}
+header .header-title{font-size:var(--fs-lg);line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.tabs{position:static;padding:6px clamp(8px,1.5vw,14px)}
+.tab-btn{padding:7px clamp(10px,2vw,18px)}
+.tab-page.active{flex:1 1 auto;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch}
+#tab-pos.active{display:flex;flex-direction:column;overflow:hidden}
+#tab-pos .pos-single{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;width:100%}
+#tab-pos .pos-single > .panel{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+#tab-pos .pos-scroll{flex:1 1 auto;min-height:56px;overflow:auto;-webkit-overflow-scrolling:touch}
+#tab-pos .total-box{margin-top:8px;padding:8px 12px}
+#tab-pos .section-title{margin:8px 0 6px;padding-bottom:4px}
+#tab-pos textarea{min-height:44px}
+#tab-pos .action-row{margin-top:8px}
+#tab-pos .order-code-row{margin-bottom:8px}
+#tab-pos .customer-bar{margin-bottom:8px;padding:6px 10px}
+body.measuring{height:auto!important;overflow:visible}
+body.measuring .tab-page.active{flex:none;overflow:visible}
+body.measuring #tab-pos .pos-single, body.measuring #tab-pos .pos-single > .panel{flex:none;overflow:visible}
+body.measuring #tab-pos .pos-scroll{flex:none;height:110px;min-height:0}
+.pos-head{display:flex;flex-direction:row!important;align-items:center!important;justify-content:space-between;gap:8px;margin-bottom:8px;padding-bottom:8px}
+.pos-head-left{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.pos-title-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px}
+.pos-title{margin:0!important;border:0!important;padding:0!important;white-space:nowrap}
+.source-chip{display:inline-flex;align-items:center;gap:6px;border:2px solid var(--blue);background:#e8f0fa;color:var(--blue);border-radius:999px;padding:4px 6px 4px 12px;font-size:var(--fs-md);cursor:pointer;font-family:inherit}
+.source-chip b{font-size:var(--fs-md)}
+.source-chip .chg{background:var(--gray);color:#fff;border-radius:999px;padding:2px 8px;font-size:var(--fs-xs);font-weight:900}
+.pos-head .draft-state{margin-left:0;font-size:var(--fs-xs)}
+.pos-head .new-order-btn{flex:none;white-space:nowrap}
+.sys-info{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin-bottom:10px;font-size:var(--fs-sm)}
+.sys-info .bridge-chip{margin-left:0}
+.zoom-now{display:flex;align-items:center;gap:10px}
+.zoom-now b{min-width:52px;text-align:center;font-size:var(--fs-lg)}
+.zoom-now .small-btn{min-width:44px;font-size:var(--fs-lg)}
+.rec-box{margin:8px 0 12px;padding:10px;border:2px solid #b9cfe8;border-radius:12px;background:#f3f8fd}
+.rec-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.rec-head b{color:var(--blue)}
+.rec-state{font-size:var(--fs-sm);color:var(--muted)}
+.rec-list{display:grid;gap:6px;max-height:30vh;overflow:auto}
+.rec-item{display:block;width:100%;text-align:left;border:2px solid #b9cfe8;background:#fff;border-radius:10px;padding:8px 10px;font-size:var(--fs-md);cursor:pointer;font-family:inherit}
+.rec-item small{display:block;color:var(--muted);font-size:var(--fs-xs);word-break:break-all}
+.rec-item.active{border-color:var(--blue);background:#e8f0fa}
+.rec-ico{color:var(--blue);margin-right:6px}
+.rec-near{color:#7c4a00;font-size:var(--fs-xs)}
+.rec-player{display:flex;align-items:center;gap:8px;margin-top:8px}
+.rec-player input[type=range]{flex:1;min-width:80px;padding:0;border:0;background:transparent}
+.rec-time{font-variant-numeric:tabular-nums;font-size:var(--fs-sm);white-space:nowrap}
+@media (max-width:600px){
+  header{flex-direction:row;align-items:center}
+  #tab-pos .order-code-row{grid-template-columns:1fr auto}
+  #tab-pos .order-code-row label{display:none}
+  #tab-pos .customer-bar{flex-wrap:nowrap}
+  #tab-pos .customer-bar input{min-width:60px}
+  #tab-pos .customer-bar > span:first-child{display:none}
+}
 </style>

@@ -24,45 +24,25 @@ GAS 後端 ──> Google 試算表（settings / menu_items / note_presets / ord
    - 登入 GitHub、Google（第一次需到 <https://script.google.com/home/usersettings> 開啟「Google Apps Script API」）
    - 建立 Apps Script 專案 → **在開啟的編輯器中選 `setup` 函式並按「執行」完成授權**（會建立資料庫試算表並匯入舊資料）
    - 建立 GitHub repo、開啟 Pages、上傳 APK 簽章金鑰
-   - 最後自動執行一次完整部署
+   - 最後自動執行一次「一鍵部署」
 2. 部署完成後，APK 會下載到 `dist\`，複製到平板安裝（或接 USB 由腳本用 adb 直接安裝）。
 3. 平板先到「設定 → 藍牙」配對出單機，再開 App →「設定」頁（管理密碼預設 **1234**）→ 選擇出單機 →「設為出單機」→「測試列印」。
 
-## 日常部署（兩種）
+## 日常部署
 
-| 檔案 | 何時用 | 內容 | 時間 |
-|---|---|---|---|
-| **`一鍵部署_快速部署驗證.bat`** | 只改 GAS 畫面 / 後台、網頁外殼 | 本機單元測試 → GAS 部署 → GAS 健康檢查 → 推送 GitHub（網頁在背景更新，不等待；略過 GitHub 上的自動化測試、線上冒煙測試、APK） | 約 1~2 分鐘 |
-| **`一鍵部署_完整部署驗證.bat`** | 有改 Android App 或條碼模組 Android 部分 | 單元 + 端對端測試 → GAS → Pages → 線上測試 → APK → 模擬器測試 → Release → 安裝 | 約 15~25 分鐘 |
+雙擊 **`一鍵部署.bat`**，會依序：
 
-快速部署若偵測到 `android/` 或 `條碼模組/android/` 自上次完整部署後有變更，會提醒並可改走完整部署。
-參數（PowerShell 執行 `scripts\deploy.ps1`）：`-Mode Fast|Full`、`-SkipTests`、`-SkipGas`、`-NoWait`、`-Message "說明"`。
+| 步驟 | 內容 |
+|---|---|
+| 1 | 本機自動化測試（GAS 單元測試、外殼 + POS 端對端測試） |
+| 2 | `clasp push` 並更新同一個 GAS 部署（網址不變） |
+| 3 | GAS 線上健康檢查 `?api=health` |
+| 4 | 寫入 `docs/config.js`，git commit / push |
+| 5 | 等待 GitHub Actions：測試 → 部署 Pages → 線上冒煙測試 → 編譯 APK → Android 模擬器自動化測試 → 發佈 Release |
+| 6 | 下載 APK 到 `dist\`，偵測到 Android 裝置可直接安裝 |
 
-## 安裝 APK 到平板
-
-雙擊 **`一鍵安裝APK.bat`**：自動找 adb（沒有會下載 Google platform-tools）、選 `dist\` 最新 APK（沒有就從 GitHub Release 下載），偵測平板並安裝，裝好自動開啟 App。
-- 平板擋 USB 安裝（小米等）會顯示設定步驟並在平板開啟「開發人員選項」，設定後按 Enter 重試
-- 簽章不同 / 版本較新會詢問是否解除舊版後重裝
-- USB 安裝不行時可改為推送到平板「Download」資料夾手動點安裝
-- 參數：`-Latest` 先下載 GitHub 最新版、`-Force` 相同版本也重裝、`-Apk 路徑` 指定檔案
-
-## 來電與掛單（v1.3）
-
-- **來電清單**：App 偵測來電（需允許「電話」與「通話紀錄」權限、平板要有電話功能），號碼出現在分頁下方的來電清單；來過的號碼顯示客戶名稱。也可按「＋」手動記錄。
-- **長按來電號碼**：① 直接新增來電點餐（記錄電話與客戶名稱，名稱可空白之後再補）② 查詢歷史交易品項（可「再訂一次」）。
-- **掛單**：未付款先送出（可列印取餐單），之後在「訂單條碼」輸入單號或刷條碼叫回，再按「找零結帳 / 結帳」，單號不變。
-- **訂單條碼**：已付款的訂單叫回時只顯示內容並可補印。
-- 試算表新增 `customers`（客戶）、`calls`（來電紀錄）工作表；訂單新增付款狀態、客戶電話與名稱欄位（自動補欄位）。
-
-## 條碼輸入（條碼模組）
-
-GAS 畫面上**所有輸入欄位**旁都有條碼按鈕（密碼、日期、單據版型表格除外），按下即呼叫 `條碼模組` 掃描，結果帶回該欄位：
-- **Android App**：條碼模組原生掃描畫面（ML Kit + ZXing），經 `WebViewScanBridge` 回傳
-- **電腦 / 手機瀏覽器**：GAS iframe 不能開相機，改開 GitHub Pages 的 `barcode/scan.html` 新視窗
-- 文字欄位直接帶入；多行備註換行附加；數字欄位只接受數字；「今日訂單」掃小票條碼會自動查詢
-- 實體條碼槍（鍵盤模式）照常可直接刷入
-
-`條碼模組/` 是唯一來源；`scripts/sync_barcode.js` 會在測試與部署前自動同步到 `gas/src/BarcodeScanLib.html`、`docs/barcode/`，請勿手動修改這些產生檔。
+參數（在 PowerShell 執行 `scripts\deploy.ps1`）：`-SkipTests`、`-SkipGas`、`-NoWait`、`-Message "說明"`。
+commit 訊息含 `[skip emulator]` 可略過模擬器測試。
 
 ## 自動化測試
 
@@ -98,3 +78,5 @@ private/        APK 簽章金鑰（不會上傳 GitHub，請另外備份！遺�
 - 中文編碼預設 big5；若印出亂碼，改試 cp950 / gbk。
 - 舊版 `WebPOS.py` 與 Access 資料庫完全不受影響，可並行使用。
 - `api=health` 與 HTTP JSON API 只開放讀取 / 開單類功能；後台管理 API 只能從畫面（google.script.run + 密碼）呼叫。
+- **畫面縮放 / 條碼確認方式**存在各台裝置（設定 → 系統資訊與本機畫面），選了立即生效，不必按「儲存設定」。預設「自動符合螢幕」讓 POS 點餐剛好一頁。
+- **來電錄音**：在「來電記錄」長按一筆記錄會自動搜尋並播放該通電話的小米通話錄音（`MIUI/sound_recorder/call_rec`、`Recordings/call_rec` 等資料夾，檔名含電話號碼與時間）。需在小米「電話 → 設定 → 通話錄音」開啟自動錄音，並允許 App 的「音樂和音訊」權限；錄音檔在通話結束後才會產生。
