@@ -192,6 +192,8 @@ function buildReceiptLines(order, settings) {
     var qty = parseInt(it.qty, 10) || 0, price = parseInt(it.price, 10) || 0, sub = qty * price;
     total += sub;
     add('item', it.name);
+    var ln = String(it.note || '').trim();
+    if (ln) add('item_note', '  ※' + ln);
     add('item_header', '數量  單價  小計');
     add('separator', dash);
     add('item', padLeft_(qty, 2) + '   ' + padLeft_(price, 4) + '  ' + padLeft_(sub, 5));

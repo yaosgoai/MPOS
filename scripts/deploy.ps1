@@ -148,14 +148,6 @@ $apk = Get-ChildItem $dist -Filter "*-b$($run.number).apk" | Select-Object -Firs
 if (-not $apk) { $apk = Get-ChildItem $dist -Filter '*.apk' | Sort-Object LastWriteTime -Descending | Select-Object -First 1 }
 Write-Ok "APK：$($apk.FullName)"
 
-if (Test-Command 'adb') {
-    $devices = (Get-NativeOutput 'adb' @('devices') 'adb devices' -AllowFail) -split "`n" | Where-Object { $_ -match "`tdevice$" }
-    if ($devices) {
-        $ans = Read-Host '  偵測到 Android 裝置，要直接安裝 APK 嗎？(Y/n)'
-        if ($ans -ne 'n') { Invoke-Native 'adb' @('install', '-r', $apk.FullName) 'adb install'; Write-Ok '已安裝到 Android 裝置' }
-    }
-}
-
 if (-not $cfg.pagesUrl) {
     $pages = Get-NativeOutput 'gh' @('api', "repos/$($cfg.repo)/pages", '--jq', '.html_url') 'gh api pages' -AllowFail
     if ($pages -match '^https://') { Set-ConfigValue $cfg 'pagesUrl' $pages.Trim(); Save-DeployConfig $cfg }
@@ -166,3 +158,11 @@ Write-Info "外殼網址（Pages）：$($cfg.pagesUrl)"
 Write-Info "GAS 後台網址    ：$gasUrl"
 Write-Info "APK            ：$($apk.FullName)"
 Write-Info "Release        ：https://github.com/$($cfg.repo)/releases/tag/$tag"
+
+Write-Step '安裝 APK 到平板'
+try {
+    & (Join-Path $PSScriptRoot 'install.ps1') -Apk $apk.FullName -Ask
+} catch {
+    Write-Warn2 "APK 安裝未完成：$_"
+    Write-Info  '部署本身已完成，可稍後執行「一鍵安裝APK.bat」重新安裝'
+}

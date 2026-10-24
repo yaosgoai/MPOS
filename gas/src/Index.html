@@ -29,21 +29,16 @@
 
 <!-- ================= POS ================= -->
 <section id="tab-pos" class="tab-page active">
-  <div class="layout">
+  <div class="pos-single">
     <section class="panel">
-      <h2 class="section-title">商品點選</h2>
-      <div id="menuArea"></div>
-    </section>
-    <aside class="panel">
-      <h2 class="section-title">目前訂單</h2>
-      <div id="cartArea" class="cart-empty">尚未點選商品</div>
+      <div class="pos-head">
+        <h2 class="section-title" style="margin:0;border:0">目前訂單</h2>
+        <button id="newOrderBtn" class="main-btn new-order-btn" onclick="openOrderPicker()">＋ 新增訂購</button>
+      </div>
+      <div id="cartArea" class="cart-empty">尚未點選商品，請按「＋ 新增訂購」</div>
       <div class="total-box"><div class="total-label">總金額</div><div class="total-value" id="totalValue">0 元</div></div>
-
-      <h2 class="section-title" style="font-size:18px;margin-top:14px;">快速備註</h2>
-      <div id="notePresetArea" class="note-grid"></div>
-      <textarea id="customNoteInput" placeholder="少數特殊狀況才手動輸入，例如：王先生 18:30 取餐"></textarea>
-      <div class="hint">備註會合併「快速備註 + 手動輸入」，減少現場輸入時間。</div>
-
+      <h2 class="section-title" style="font-size:18px;margin-top:14px;">整張訂單備註</h2>
+      <textarea id="orderNoteInput" placeholder="整張訂單的備註，例如：王先生 18:30 取餐、電話預訂"></textarea>
       <div class="action-row">
         <button id="checkoutBtn" class="main-btn print-btn" onclick="openCheckout()">結帳</button>
         <button class="main-btn blue-btn" onclick="createOrder(false)">只建立</button>
@@ -52,9 +47,43 @@
       </div>
       <div id="posMsg" class="message"></div>
       <div id="receiptPreview" class="receipt-preview"></div>
-    </aside>
+    </section>
   </div>
 </section>
+
+<!-- ================= 新增訂購項目視窗：商品 + 數量 + 此項的快速備註 ================= -->
+<div id="orderOverlay" class="order-overlay">
+  <div class="order-modal">
+    <div class="checkout-head">
+      <div class="checkout-title" id="pickerTitle">新增訂購</div>
+      <button class="checkout-close" onclick="closeOrderPicker()">關閉</button>
+    </div>
+    <div class="order-body">
+      <div class="order-menu">
+        <h2 class="section-title">1. 選擇商品</h2>
+        <div id="menuArea"></div>
+      </div>
+      <div class="order-side">
+        <h2 class="section-title">2. 數量</h2>
+        <div id="pickerItem" class="picker-item cart-empty">請先點左側商品</div>
+        <div class="qty-box picker-qty">
+          <button class="qty-btn minus" onclick="pickerQty(-1)">－</button>
+          <div class="qty-num" id="pickerQtyNum">1</div>
+          <button class="qty-btn" onclick="pickerQty(1)">＋</button>
+        </div>
+        <h2 class="section-title" style="margin-top:14px;">3. 此項快速備註</h2>
+        <div id="notePresetArea" class="note-grid"></div>
+        <textarea id="lineNoteInput" placeholder="此項的特殊備註（選填），例如：多烤一點"></textarea>
+      </div>
+    </div>
+    <div class="order-foot">
+      <div id="pickerTotal" class="picker-total">小計 0 元</div>
+      <button id="pickerDeleteBtn" class="main-btn clear-btn" style="display:none" onclick="deletePickerLine()">刪除此項</button>
+      <button id="pickerMoreBtn" class="main-btn blue-btn" onclick="savePickerLine(true)">加入並繼續點</button>
+      <button id="pickerDoneBtn" class="main-btn print-btn" onclick="savePickerLine(false)">加入訂單</button>
+    </div>
+  </div>
+</div>
 
 <!-- ================= 今日訂單 ================= -->
 <section id="tab-orders" class="tab-page">
@@ -256,8 +285,9 @@
  * ====================================================================== */
 var GAS_VERSION = <?!= JSON.stringify(appVersion) ?>;
 var appData = {menu:[], all_menu:[], notes:[], all_notes:[], settings:{}, layout:[], default_layout:[], today:''};
-var cart = {};
-var selectedNotes = [];
+var cart = [];          // 訂購項目：[{key,id,name,price,qty,notes:[],custom:''}]
+var picker = null;      // 新增 / 修改中的項目
+var lineSeq = 0;
 var checkoutCash = '';
 var checkoutChangeAmount = 0;
 var adminPin = '';
@@ -430,42 +460,94 @@ function switchAdminSection(name, btn){
   $('admin-'+name).classList.add('active');
 }
 
-/* ---------- 點餐 ---------- */
+/* ---------- 點餐：每次「新增訂購」= 一個項目（商品 + 數量 + 此項備註） ---------- */
 function groupByCategory(items){var g={},order=[];items.forEach(function(it){if(!g[it.category]){g[it.category]=[];order.push(it.category);}g[it.category].push(it);});return {g:g,order:order};}
+function menuItem(id){return (appData.menu||[]).filter(function(x){return String(x.id)===String(id);})[0];}
+function lineNote(l){var arr=(l.notes||[]).slice();if(l.custom)arr.push(l.custom);return arr.join('、');}
+function cartItems(){return cart.filter(function(x){return x.qty>0;});}
+function total(){return cartItems().reduce(function(s,i){return s+i.price*i.qty;},0);}
+
 function renderMenu(){
   var gr=groupByCategory(appData.menu||[]), html='';
   gr.order.forEach(function(cat){
     html+='<div class="category"><div class="category-title">'+escapeHtml(cat)+'</div><div class="menu-grid">';
-    gr.g[cat].forEach(function(item){ html+='<button class="item-btn" data-id="'+escapeHtml(item.id)+'" onclick="addItem(this.dataset.id)"><div class="item-name">'+escapeHtml(item.name)+'</div><div class="item-price">'+money(item.price)+'</div></button>'; });
+    gr.g[cat].forEach(function(item){ html+='<button class="item-btn" data-id="'+escapeHtml(item.id)+'" onclick="pickItem(this.dataset.id)"><div class="item-name">'+escapeHtml(item.name)+'</div><div class="item-price">'+money(item.price)+'</div></button>'; });
     html+='</div></div>';
   });
   $('menuArea').innerHTML = html || '<div class="cart-empty">尚無啟用商品</div>';
 }
-function addItem(id){var item=(appData.menu||[]).filter(function(x){return String(x.id)===String(id);})[0];if(!item)return;if(!cart[id])cart[id]={id:item.id,name:item.name,price:item.price,qty:0};cart[id].qty++;renderCart();}
-function changeQty(id,d){if(!cart[id])return;cart[id].qty+=d;if(cart[id].qty<=0)delete cart[id];renderCart();}
-function cartItems(){return Object.keys(cart).map(function(k){return cart[k];}).filter(function(x){return x.qty>0;});}
-function total(){return cartItems().reduce(function(s,i){return s+i.price*i.qty;},0);}
-function renderCart(){
-  var items=cartItems(), area=$('cartArea');
-  if(!items.length){area.className='cart-empty';area.innerHTML='尚未點選商品';$('totalValue').innerText='0 元';return;}
-  area.className=''; var html='';
-  items.forEach(function(item){
-    var id=escapeHtml(item.id);
-    html+='<div class="cart-row"><div><div class="cart-name">'+escapeHtml(item.name)+'</div><div class="cart-meta">單價 '+money(item.price)+'</div><div class="subtotal">小計 '+money(item.price*item.qty)+'</div></div>'+
-      '<div class="qty-box"><button class="qty-btn minus" data-id="'+id+'" onclick="changeQty(this.dataset.id,-1)">－</button><div class="qty-num">'+item.qty+'</div><button class="qty-btn" data-id="'+id+'" onclick="changeQty(this.dataset.id,1)">＋</button></div></div>';
-  });
-  area.innerHTML=html; $('totalValue').innerText=money(total());
-}
 function renderNotes(){
-  var html='';
-  (appData.notes||[]).forEach(function(n,i){ var active=selectedNotes.indexOf(n.text)>=0?'active':''; html+='<button class="note-chip '+active+'" onclick="toggleNote('+i+')">'+escapeHtml(n.text)+'</button>'; });
+  var html='', sel=picker?picker.notes:[];
+  (appData.notes||[]).forEach(function(n,i){ html+='<button class="note-chip '+(sel.indexOf(n.text)>=0?'active':'')+'" onclick="toggleNote('+i+')">'+escapeHtml(n.text)+'</button>'; });
   $('notePresetArea').innerHTML = html || '<div class="hint">尚未建立快速備註，可到後台管理新增。</div>';
 }
-function toggleNote(i){var t=appData.notes[i].text;var k=selectedNotes.indexOf(t);if(k>=0)selectedNotes.splice(k,1);else selectedNotes.push(t);renderNotes();}
-function combinedNote(){var arr=selectedNotes.slice();var c=$('customNoteInput').value.trim();if(c)arr.push(c);return arr.join('、');}
-function clearCart(withMsg){cart={};selectedNotes=[];$('customNoteInput').value='';renderCart();renderNotes();if(withMsg){showMsg('posMsg','ok','訂單已清空。');$('receiptPreview').style.display='none';}}
+
+/* 視窗 */
+function openOrderPicker(key){
+  var line = key ? cart.filter(function(l){return l.key===key;})[0] : null;
+  picker = line ? {key:line.key,id:line.id,qty:line.qty,notes:line.notes.slice(),custom:line.custom||''} : {key:null,id:null,qty:1,notes:[],custom:''};
+  $('pickerTitle').innerText = line ? '修改訂購項目' : '新增訂購';
+  $('pickerDeleteBtn').style.display = line ? 'inline-block' : 'none';
+  $('pickerMoreBtn').style.display = line ? 'none' : 'inline-block';
+  $('pickerDoneBtn').innerText = line ? '更新此項' : '加入訂單';
+  $('lineNoteInput').value = picker.custom;
+  renderPicker();
+  $('orderOverlay').classList.add('show');
+}
+function closeOrderPicker(){ $('orderOverlay').classList.remove('show'); picker=null; }
+function pickItem(id){
+  if(!picker) return;
+  if(picker.id===id) picker.qty++; else { picker.id=id; picker.qty=1; }
+  renderPicker();
+}
+function pickerQty(d){ if(!picker||!picker.id)return; picker.qty=Math.max(1,picker.qty+d); renderPicker(); }
+function toggleNote(i){ if(!picker)return; var t=appData.notes[i].text, k=picker.notes.indexOf(t); if(k>=0)picker.notes.splice(k,1); else picker.notes.push(t); renderNotes(); }
+function renderPicker(){
+  var item = picker && picker.id ? menuItem(picker.id) : null;
+  document.querySelectorAll('#menuArea .item-btn').forEach(function(btn){ btn.classList.toggle('selected', !!item && btn.dataset.id===String(item.id)); });
+  var el=$('pickerItem');
+  if(item){ el.className='picker-item'; el.innerHTML='<div class="cart-name">'+escapeHtml(item.name)+'</div><div class="cart-meta">單價 '+money(item.price)+'</div>'; }
+  else { el.className='picker-item cart-empty'; el.innerText='請先點左側商品'; }
+  $('pickerQtyNum').innerText = picker ? picker.qty : 1;
+  $('pickerTotal').innerText = '小計 ' + money(item ? item.price*picker.qty : 0);
+  $('pickerDoneBtn').disabled = !item; $('pickerMoreBtn').disabled = !item;
+  renderNotes();
+}
+function savePickerLine(keepOpen){
+  if(!picker || !picker.id){ toast('請先選擇商品'); return; }
+  var item=menuItem(picker.id); if(!item) return;
+  picker.custom=$('lineNoteInput').value.trim();
+  var data={id:item.id,name:item.name,price:item.price,qty:picker.qty,notes:picker.notes.slice(),custom:picker.custom};
+  if(picker.key){ cart.forEach(function(l,i){ if(l.key===picker.key){ data.key=l.key; cart[i]=data; } }); }
+  else {
+    // 同商品且備註相同 → 合併數量；備註不同 → 分開成不同項目
+    var same=cart.filter(function(l){return l.id===data.id && lineNote(l)===lineNote(data);})[0];
+    if(same) same.qty+=data.qty; else { data.key='L'+(++lineSeq); cart.push(data); }
+  }
+  renderCart();
+  toast('已加入：'+item.name+' x '+data.qty+(lineNote(data)?'（'+lineNote(data)+'）':''), 1500);
+  if(keepOpen){ openOrderPicker(); } else { closeOrderPicker(); }
+}
+function deletePickerLine(){ if(picker&&picker.key){ cart=cart.filter(function(l){return l.key!==picker.key;}); renderCart(); } closeOrderPicker(); }
+
+/* 主畫面訂單清單 */
+function changeQty(key,d){ cart.forEach(function(l){ if(l.key===key) l.qty+=d; }); cart=cart.filter(function(l){return l.qty>0;}); renderCart(); }
+function renderCart(){
+  var items=cartItems(), area=$('cartArea');
+  if(!items.length){ area.className='cart-empty'; area.innerHTML='尚未點選商品，請按「＋ 新增訂購」'; $('totalValue').innerText='0 元'; return; }
+  var html='';
+  items.forEach(function(l){
+    var k=escapeHtml(l.key), n=lineNote(l);
+    html+='<div class="cart-row"><div class="cart-line" data-key="'+k+'" onclick="openOrderPicker(this.dataset.key)"><div class="cart-name">'+escapeHtml(l.name)+' <span class="edit-hint">✎</span></div>'+
+      (n?'<div class="line-note">※ '+escapeHtml(n)+'</div>':'')+
+      '<div class="cart-meta">單價 '+money(l.price)+'</div><div class="subtotal">小計 '+money(l.price*l.qty)+'</div></div>'+
+      '<div class="qty-box"><button class="qty-btn minus" data-key="'+k+'" onclick="changeQty(this.dataset.key,-1)">－</button><div class="qty-num">'+l.qty+'</div><button class="qty-btn" data-key="'+k+'" onclick="changeQty(this.dataset.key,1)">＋</button></div></div>';
+  });
+  area.className=''; area.innerHTML=html; $('totalValue').innerText=money(total());
+}
+function clearCart(withMsg){ cart=[]; $('orderNoteInput').value=''; renderCart(); if(withMsg){ showMsg('posMsg','ok','訂單已清空。'); $('receiptPreview').style.display='none'; } }
 function orderPayload(printFlag, pay){
-  var p={items:cartItems().map(function(i){return {id:i.id,qty:i.qty};}), note:combinedNote(), print:printFlag};
+  var p={items:cartItems().map(function(l){return {id:l.id,qty:l.qty,note:lineNote(l)};}), note:$('orderNoteInput').value.trim(), print:printFlag};
   if(pay){p.cash_received=pay.received;p.change_amount=pay.change_amount;p.payment_method='cash';}
   return p;
 }
@@ -504,7 +586,8 @@ async function createOrder(printFlag, pay){
 
 /* ---------- 結帳鍵盤 ---------- */
 function openCheckout(){
-  if(!cartItems().length){showMsg('posMsg','err','尚未點選商品，無法結帳。');return;}
+  $('orderOverlay').classList.remove('show');
+  if(!cartItems().length){showMsg('posMsg','err','尚未點選商品，請先按「＋ 新增訂購」。');return;}
   checkoutCash='';checkoutChangeAmount=0;$('checkoutMsg').innerText='';
   $('checkoutTotal').innerText=money(total());
   $('checkoutOverlay').classList.add('show'); updateCheckoutUi(false);
@@ -553,7 +636,7 @@ function renderOrders(orders){
   var html='<table><thead><tr><th style="width:150px">單號 / 條碼</th><th style="width:86px">狀態</th><th>訂單明細</th><th>備註</th><th style="width:130px">金額 / 付款</th><th style="width:170px">時間</th><th style="width:150px">動作</th></tr></thead><tbody>';
   orders.forEach(function(o){
     var items='<table class="order-items-table"><thead><tr><th>品名</th><th>數量</th><th>單價</th><th>小計</th></tr></thead><tbody>';
-    (o.items||[]).forEach(function(i){ items+='<tr><td>'+escapeHtml(i.name)+'</td><td class="num-cell">'+i.qty+'</td><td class="num-cell">'+money(i.price)+'</td><td class="num-cell"><b>'+money(i.subtotal)+'</b></td></tr>'; });
+    (o.items||[]).forEach(function(i){ items+='<tr><td>'+escapeHtml(i.name)+(i.note?'<div class="line-note">※ '+escapeHtml(i.note)+'</div>':'')+'</td><td class="num-cell">'+i.qty+'</td><td class="num-cell">'+money(i.price)+'</td><td class="num-cell"><b>'+money(i.subtotal)+'</b></td></tr>'; });
     items+='</tbody></table>';
     var pay=o.cash_received>0?'<br><span class="hint">收款：'+money(o.cash_received)+'<br>找零：'+money(o.change_amount)+'</span>':'<br><span class="hint">未記錄收款</span>';
     var id=parseInt(o.id,10);
@@ -580,7 +663,7 @@ async function lookupOrder(){
   try{
     var o=(await api('apiLookup',v)).order;
     $('adminDate').value=o.order_date; $('adminStatus').value='';
-    showMsg('lookupMsg','ok','查詢成功：'+o.order_no+'（'+statusLabel(o.status)+'）  '+money(o.total)+'\n'+(o.items||[]).map(function(i){return i.name+' x '+i.qty;}).join('、'));
+    showMsg('lookupMsg','ok','查詢成功：'+o.order_no+'（'+statusLabel(o.status)+'）  '+money(o.total)+'\n'+(o.items||[]).map(function(i){return i.name+' x '+i.qty+(i.note?'（'+i.note+'）':'');}).join('、'));
     loadOrders(); $('lookupInput').value='';
   }catch(e){ showMsg('lookupMsg','err',e.message); }
 }

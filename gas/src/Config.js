@@ -2,7 +2,7 @@
  * MPOS Cloud - 設定與預設資料
  * 茉莉花鯛魚燒 POS（GAS 管理後台版）
  */
-var APP_VERSION = 'cloud-1.0.0';
+var APP_VERSION = 'cloud-1.1.0';
 var TZ = 'Asia/Taipei';
 
 var DEFAULT_SHOP = {
@@ -75,6 +75,7 @@ var DEFAULT_RECEIPT_LAYOUT = [
   { role: 'time', title: '時間', show: 1, font_pt: 8, weight: 400, align: 'left', x_offset: 0, space_before: 0, space_after: 1 },
   { role: 'item_header', title: '品項標題', show: 1, font_pt: 8, weight: 700, align: 'left', x_offset: 0, space_before: 0, space_after: 0 },
   { role: 'item', title: '品項明細', show: 1, font_pt: 8, weight: 400, align: 'left', x_offset: 0, space_before: 0, space_after: 0 },
+  { role: 'item_note', title: '品項備註', show: 1, font_pt: 8, weight: 700, align: 'left', x_offset: 0, space_before: 0, space_after: 0 },
   { role: 'total', title: '合計', show: 1, font_pt: 10, weight: 900, align: 'left', x_offset: 0, space_before: 1, space_after: 1 },
   { role: 'payment', title: '付款/收款/找零', show: 1, font_pt: 8, weight: 700, align: 'left', x_offset: 0, space_before: 0, space_after: 0 },
   { role: 'note', title: '備註', show: 1, font_pt: 8, weight: 700, align: 'left', x_offset: 0, space_before: 0, space_after: 1 },
@@ -98,7 +99,7 @@ var TABLES = {
       ['total', 'n'], ['note', 's'], ['created_at', 's'], ['printed_at', 's'], ['completed_at', 's'], ['cancelled_at', 's'],
       ['cash_received', 'n'], ['change_amount', 'n'], ['payment_method', 's']],
   },
-  order_items: { key: 'id', cols: [['id', 'n'], ['order_id', 'n'], ['item_id', 's'], ['name', 's'], ['price', 'n'], ['qty', 'n'], ['subtotal', 'n']] },
+  order_items: { key: 'id', cols: [['id', 'n'], ['order_id', 'n'], ['item_id', 's'], ['name', 's'], ['price', 'n'], ['qty', 'n'], ['subtotal', 'n'], ['note', 's']] },
   receipt_layout: {
     key: 'role',
     cols: [['role', 's'], ['sort_order', 'n'], ['title', 's'], ['show', 'n'], ['font_pt', 'n'], ['weight', 'n'], ['align', 's'],

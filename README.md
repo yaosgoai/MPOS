@@ -44,6 +44,14 @@ GAS 後端 ──> Google 試算表（settings / menu_items / note_presets / ord
 參數（在 PowerShell 執行 `scripts\deploy.ps1`）：`-SkipTests`、`-SkipGas`、`-NoWait`、`-Message "說明"`。
 commit 訊息含 `[skip emulator]` 可略過模擬器測試。
 
+## 安裝 APK 到平板
+
+雙擊 **`一鍵安裝APK.bat`**：自動找 adb（沒有會下載 Google platform-tools）、選 `dist\` 最新 APK（沒有就從 GitHub Release 下載），偵測平板並安裝，裝好自動開啟 App。
+- 平板擋 USB 安裝（小米等）會顯示設定步驟並在平板開啟「開發人員選項」，設定後按 Enter 重試
+- 簽章不同 / 版本較新會詢問是否解除舊版後重裝
+- USB 安裝不行時可改為推送到平板「Download」資料夾手動點安裝
+- 參數：`-Latest` 先下載 GitHub 最新版、`-Force` 相同版本也重裝、`-Apk 路徑` 指定檔案
+
 ## 自動化測試
 
 | 測試 | 位置 | 執行 |

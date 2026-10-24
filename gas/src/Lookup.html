@@ -42,7 +42,7 @@ function query(){
     if(!j.ok){show('err',j.message);document.getElementById('result').innerHTML='';return;}
     var o=j.order;
     show('ok','查詢成功：'+o.order_no);
-    var items=(o.items||[]).map(function(i){return '<div>'+esc(i.name)+' x '+i.qty+' = '+money(i.subtotal)+'</div>';}).join('');
+    var items=(o.items||[]).map(function(i){return '<div>'+esc(i.name)+' x '+i.qty+' = '+money(i.subtotal)+(i.note?'<br><span style="color:#b3261e;font-weight:900">※ '+esc(i.note)+'</span>':'')+'</div>';}).join('');
     document.getElementById('result').innerHTML='<div class="card"><table>'+
       '<tr><th style="width:120px">單號</th><td><b>'+esc(o.order_no)+'</b><br>條碼：'+esc(o.barcode_no)+'</td></tr>'+
       '<tr><th>狀態</th><td>'+label(o.status)+'</td></tr><tr><th>建立時間</th><td>'+esc(o.created_at)+'</td></tr>'+

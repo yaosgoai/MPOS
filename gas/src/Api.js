@@ -64,7 +64,8 @@ function normalizeCartItems_(rawItems, menu) {
     var m = map[id];
     if (!m) throw new Error('商品不存在或已停用：' + id);
     var price = parseInt(m.price, 10) || 0;
-    out.push({ id: id, name: m.name, price: price, qty: qty, subtotal: price * qty });
+    var note = String(raw.note || '').replace(/[\r\n]+/g, ' ').trim().substring(0, 200);
+    out.push({ id: id, name: m.name, price: price, qty: qty, subtotal: price * qty, note: note });
   });
   if (!out.length) throw new Error('訂單數量不可為 0。');
   return out;
@@ -126,7 +127,7 @@ function apiCreateOrder(payload) {
       appendRows_('orders', [order]);
       var itemId = nextId_('order_items');
       appendRows_('order_items', items.map(function (it, i) {
-        return { id: itemId + i, order_id: order.id, item_id: it.id, name: it.name, price: it.price, qty: it.qty, subtotal: it.subtotal };
+        return { id: itemId + i, order_id: order.id, item_id: it.id, name: it.name, price: it.price, qty: it.qty, subtotal: it.subtotal, note: it.note || '' };
       }));
       SpreadsheetApp.flush();
     } finally {

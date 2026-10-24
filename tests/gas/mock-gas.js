@@ -54,6 +54,11 @@ class MockSheet {
     return last;
   }
   getMaxRows() { return this.maxRows; }
+  getLastColumn() {
+    let last = 0;
+    for (const k of Object.keys(this.cells)) { const c = Number(k.split(':')[1]); if (this.cells[k] !== '' && c > last) last = c; }
+    return last;
+  }
   insertRowsAfter(after, n) { this.maxRows += n; }
   setFrozenRows() {}
 }

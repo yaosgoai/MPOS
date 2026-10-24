@@ -39,11 +39,26 @@ function getDb_() {
   return _ssCache;
 }
 
+var _headerChecked = {};
+
 function getSheet_(table) {
   var ss = getDb_();
   var sh = ss.getSheetByName(table);
   if (!sh) sh = createTableSheet_(ss, table);
+  else if (!_headerChecked[table]) ensureHeaders_(sh, table);
+  _headerChecked[table] = true;
   return sh;
+}
+
+/** 新版新增欄位時，補上舊工作表的欄位標題與格式（例如 order_items.note） */
+function ensureHeaders_(sh, table) {
+  var cols = TABLES[table].cols;
+  var lastCol = Math.max(1, sh.getLastColumn ? sh.getLastColumn() : cols.length);
+  if (lastCol >= cols.length) return;
+  for (var i = lastCol; i < cols.length; i++) {
+    if (cols[i][1] === 's') sh.getRange(1, i + 1, sh.getMaxRows(), 1).setNumberFormat('@');
+    sh.getRange(1, i + 1).setValue(cols[i][0]).setFontWeight('bold');
+  }
 }
 
 function createTableSheet_(ss, table) {

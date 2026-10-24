@@ -69,13 +69,38 @@ test('外殼載入 GAS、跨網域 postMessage 握手、選擇藍牙出單機、
   await frame.click('text=設為出單機');
   await frame.waitForFunction(() => document.getElementById('bridgeChip').innerText.includes('CP-Q3'));
 
-  // 回到 POS 點餐 → 結帳 $100 → 結帳並列印
+  // 回到 POS 點餐 → 結帳 $500 → 結帳並列印
   await frame.click('button[data-tab="pos"]');
+  assert.equal(await frame.isVisible('#menuArea'), false, '主畫面不應直接顯示商品');
+  await frame.click('#newOrderBtn');
+  await frame.waitForSelector('#orderOverlay.show');
+  // 項目 1：卡士達 x2，此項備註「先做」
   await frame.click('.item-btn[data-id="custard"]');
   await frame.click('.item-btn[data-id="custard"]');
+  assert.equal(await frame.innerText('#pickerQtyNum'), '2');
   await frame.click('.note-chip >> text=先做');
+  assert.match(await frame.innerText('#pickerTotal'), /90 元/);
+  await frame.click('#pickerMoreBtn'); // 加入並繼續點
+  await frame.waitForSelector('#orderOverlay.show');
+  assert.equal(await frame.locator('.note-chip.active').count(), 0, '新項目的備註要重新選');
+  // 項目 2：茶凍 x1，此項備註「分開裝」
+  await frame.click('.item-btn[data-id="tea_jelly"]');
+  await frame.click('.note-chip >> text=分開裝');
+  await frame.click('#pickerDoneBtn');
+  assert.equal(await frame.isVisible('#orderOverlay'), false);
+  assert.equal(await frame.locator('#cartArea .cart-row').count(), 2);
+  assert.match(await frame.innerText('#cartArea'), /※ 先做[\s\S]*※ 分開裝/);
+  assert.match(await frame.innerText('#totalValue'), /120 元/);
+  // 修改項目 2：數量 +1
+  await frame.click('#cartArea .cart-line >> nth=1');
+  await frame.waitForSelector('#orderOverlay.show');
+  assert.equal(await frame.innerText('#pickerTitle'), '修改訂購項目');
+  await frame.click('.picker-qty .qty-btn:not(.minus)');
+  await frame.click('#pickerDoneBtn');
+  assert.match(await frame.innerText('#totalValue'), /150 元/);
+  await frame.fill('#orderNoteInput', '王先生 18:30 取餐');
   await frame.click('#checkoutBtn');
-  await frame.click('.quick-cash >> text=$100');
+  await frame.click('.quick-cash >> text=$500');
   await frame.click('#checkoutConfirmBtn');
   await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('列印成功'));
 
@@ -84,8 +109,11 @@ test('外殼載入 GAS、跨網域 postMessage 握手、選擇藍牙出單機、
   assert.ok(print, '應送出 print 給 Android');
   assert.equal(print.params.job.order_no, '202607040001');
   assert.equal(print.params.job.ean13, '2000007040014');
-  assert.ok(print.params.job.lines.some((l) => l.text === '找零：10 元'));
-  assert.ok(print.params.job.lines.some((l) => l.text === '先做'));
+  const texts = print.params.job.lines.map((l) => l.text);
+  assert.ok(texts.includes('找零：350 元'), texts.join('|'));
+  assert.equal(texts[texts.indexOf('卡士達') + 1], '  ※先做');
+  assert.equal(texts[texts.indexOf('茶凍') + 1], '  ※分開裝');
+  assert.ok(texts.includes('王先生 18:30 取餐'));
 
   // 後端已記錄列印時間
   const orders = JSON.parse(JSON.stringify(h.g.apiOrders('2026-07-04'))).orders;
@@ -106,7 +134,9 @@ test('外殼載入 GAS、跨網域 postMessage 握手、選擇藍牙出單機、
 test('一般瀏覽器（沒有 Android App）：可開單，列印失敗時提示補印', async () => {
   const { ctx, frame, errors } = await openShell(false);
   await frame.waitForFunction(() => document.getElementById('bridgeChip').innerText.includes('網頁外殼'));
+  await frame.click('#newOrderBtn');
   await frame.click('.item-btn[data-id="cheese"]');
+  await frame.click('#pickerDoneBtn');
   await frame.click('#checkoutBtn');
   await frame.click('#checkoutConfirmBtn'); // 未輸入收款 → 視為剛好
   await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('補印'));

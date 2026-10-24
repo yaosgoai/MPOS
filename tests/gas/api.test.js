@@ -25,7 +25,7 @@ test('setup 建立工作表並匯入種子資料，重複執行不重複匯入',
   assert.equal(boot.ok, true);
   assert.equal(boot.all_menu.length, 8);
   assert.equal(boot.all_notes.length, 7);
-  assert.equal(boot.layout.length, 14);
+  assert.equal(boot.layout.length, 15);
   assert.equal(boot.settings.encoding, 'cp950'); // 舊資料庫設定已匯入
   assert.equal(g.__store.props.ADMIN_PIN, '1234');
 });
@@ -53,6 +53,38 @@ test('開單：流水號遞增、條碼文字不被轉成數字、列印工作�
 
   assert.equal(g.apiMarkPrinted(r1.order.id).ok, true);
   assert.ok(plain(g.apiOrders('2026-07-04')).orders[1].printed_at);
+});
+
+test('訂購項目備註：同商品不同備註分開記錄，並印在該品項下方', () => {
+  const g = fresh(() => new Date('2026-07-04T02:00:00Z'));
+  const r = plain(g.apiCreateOrder({
+    items: [{ id: 'custard', qty: 2, note: '先做、分開裝' }, { id: 'custard', qty: 1, note: '' }, { id: 'cheese', qty: 1, note: '多烤一點\n' }],
+    note: '王先生 18:30 取餐', print: true, cash_received: 200,
+  }));
+  assert.equal(r.ok, true, r.message);
+  assert.equal(r.order.items.length, 3);
+  assert.equal(r.order.total, 180);
+  const lines = r.print_job.lines.map((l) => l.role + '|' + l.text);
+  const i1 = lines.indexOf('item|卡士達');
+  assert.equal(lines[i1 + 1], 'item_note|  ※先做、分開裝');
+  assert.ok(lines.includes('item_note|  ※多烤一點'));
+  assert.ok(lines.includes('note|王先生 18:30 取餐'), '整張訂單備註仍在備註區');
+  const saved = plain(g.apiOrders('2026-07-04')).orders[0];
+  assert.deepEqual(saved.items.map((i) => i.note), ['先做、分開裝', '', '多烤一點']);
+  assert.equal(saved.note, '王先生 18:30 取餐');
+  assert.equal(plain(g.apiLookup('0704001')).order.items[0].note, '先做、分開裝');
+});
+
+test('舊資料表自動補上 order_items.note 欄位', () => {
+  const g = createGasContext();
+  const ss = g.SpreadsheetApp.create('old');
+  g.PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', ss.getId());
+  const sh = ss.insertSheet('order_items');
+  sh.getRange(1, 1, 1, 7).setValues([['id', 'order_id', 'item_id', 'name', 'price', 'qty', 'subtotal']]);
+  sh.getRange(2, 1, 1, 7).setValues([[1, 1, 'cheese', '起司', 45, 1, 45]]);
+  g.setup();
+  assert.equal(sh.getRange(1, 8).getValues()[0][0], 'note');
+  assert.equal(plain(g.apiCreateOrder({ items: [{ id: 'cheese', qty: 1, note: 'x' }], print: false })).ok, true);
 });
 
 test('開單驗證：未結帳不得列印、收款不足、停用商品', () => {
