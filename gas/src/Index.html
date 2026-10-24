@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<title>茉莉花鯛魚燒 POS</title>
+<?!= include('Styles') ?>
+</head>
+<body>
+<div id="loadingMask" class="loading-mask">POS 資料載入中...</div>
+
+<header>
+  <div>
+    <div class="header-title"><span id="shopNameTitle">茉莉花鯛魚燒</span> POS 出單系統
+      <span style="font-size:13px;opacity:.75"><?= appVersion ?></span>
+      <span id="bridgeChip" class="bridge-chip">偵測列印環境...</span>
+    </div>
+    <div class="header-sub">點餐 → 當日流水號 → 藍牙出單 → 完成</div>
+  </div>
+  <div class="header-sub"><span id="shopAddressHeader"></span><br>預訂專線：<span id="shopPhoneHeader"></span></div>
+</header>
+
+<nav class="tabs">
+  <button class="tab-btn active" data-tab="pos" onclick="switchTab('pos')">POS 點餐</button>
+  <button class="tab-btn" data-tab="orders" onclick="switchTab('orders')">今日訂單</button>
+  <button class="tab-btn" data-tab="admin" onclick="switchTab('admin')">後台管理</button>
+  <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">設定</button>
+</nav>
+
+<!-- ================= POS ================= -->
+<section id="tab-pos" class="tab-page active">
+  <div class="layout">
+    <section class="panel">
+      <h2 class="section-title">商品點選</h2>
+      <div id="menuArea"></div>
+    </section>
+    <aside class="panel">
+      <h2 class="section-title">目前訂單</h2>
+      <div id="cartArea" class="cart-empty">尚未點選商品</div>
+      <div class="total-box"><div class="total-label">總金額</div><div class="total-value" id="totalValue">0 元</div></div>
+
+      <h2 class="section-title" style="font-size:18px;margin-top:14px;">快速備註</h2>
+      <div id="notePresetArea" class="note-grid"></div>
+      <textarea id="customNoteInput" placeholder="少數特殊狀況才手動輸入，例如：王先生 18:30 取餐"></textarea>
+      <div class="hint">備註會合併「快速備註 + 手動輸入」，減少現場輸入時間。</div>
+
+      <div class="action-row">
+        <button id="checkoutBtn" class="main-btn print-btn" onclick="openCheckout()">結帳</button>
+        <button class="main-btn blue-btn" onclick="createOrder(false)">只建立</button>
+        <button class="main-btn preview-btn" onclick="previewReceipt()">預覽</button>
+        <button class="main-btn clear-btn" onclick="clearCart(true)">清空</button>
+      </div>
+      <div id="posMsg" class="message"></div>
+      <div id="receiptPreview" class="receipt-preview"></div>
+    </aside>
+  </div>
+</section>
+
+<!-- ================= 今日訂單 ================= -->
+<section id="tab-orders" class="tab-page">
+  <div class="admin-layout">
+    <section class="panel">
+      <h2 class="section-title">今日訂單管理</h2>
+      <div class="field-grid" style="margin-bottom:12px;">
+        <div><label>日期</label><input type="date" id="adminDate" onchange="loadOrders()"></div>
+        <div><label>狀態</label><select id="adminStatus" onchange="loadOrders()"><option value="">全部</option><option value="pending">待完成</option><option value="completed">已完成</option><option value="cancelled">已取消</option></select></div>
+        <div><label>&nbsp;</label><button class="main-btn blue-btn" onclick="loadOrders()">重新整理</button></div>
+      </div>
+      <div class="field-grid" style="margin-bottom:12px;">
+        <div><label>掃描 / 輸入單號查詢</label><input id="lookupInput" placeholder="掃描小票條碼或輸入 0704001" onkeydown="if(event.key==='Enter')lookupOrder()"></div>
+        <div><label>&nbsp;</label><button class="main-btn gray-btn" onclick="lookupOrder()">查詢單號</button></div>
+      </div>
+      <div id="lookupMsg" class="message"></div>
+      <div id="summaryArea" class="stats"></div>
+      <div id="ordersArea"></div>
+    </section>
+    <section class="panel">
+      <h2 class="section-title">今日品項統計</h2>
+      <div id="salesArea"></div>
+    </section>
+  </div>
+</section>
+
+<!-- ================= 後台管理 ================= -->
+<section id="tab-admin" class="tab-page">
+  <div class="admin-layout">
+    <section class="panel">
+      <h2 class="section-title">後台管理</h2>
+      <div class="admin-subtabs">
+        <button class="admin-subtab active" onclick="switchAdminSection('products',this)">商品管理</button>
+        <button class="admin-subtab" onclick="switchAdminSection('notes',this)">備註管理</button>
+        <button class="admin-subtab" onclick="switchAdminSection('system',this)">系統資訊</button>
+      </div>
+
+      <div id="admin-products" class="admin-section active">
+        <div class="field-grid-4">
+          <div><label>分類</label><input id="mCategory" placeholder="鯛魚燒口味"></div>
+          <div><label>品名</label><input id="mName" placeholder="新品項"></div>
+          <div><label>價格</label><input id="mPrice" type="number" value="0"></div>
+          <div><label>排序</label><input id="mSort" type="number" value="100"></div>
+        </div>
+        <input id="mId" type="hidden"><input id="mActive" type="hidden" value="1">
+        <div class="action-row"><button class="main-btn blue-btn" onclick="saveMenuItem()">儲存商品</button><button class="main-btn gray-btn" onclick="clearMenuForm()">清除表單</button></div>
+        <div id="menuAdminArea" style="margin-top:12px;"></div>
+      </div>
+
+      <div id="admin-notes" class="admin-section">
+        <div class="field-grid">
+          <div><label>備註文字</label><input id="nText" placeholder="例如：先做"></div>
+          <div><label>排序</label><input id="nSort" type="number" value="100"></div>
+          <div><label>&nbsp;</label><button class="main-btn blue-btn" onclick="saveNote()">儲存備註</button></div>
+        </div>
+        <input id="nId" type="hidden"><input id="nActive" type="hidden" value="1">
+        <div id="noteAdminArea" style="margin-top:12px;"></div>
+      </div>
+
+      <div id="admin-system" class="admin-section">
+        <div class="field-grid">
+          <div><label>新管理密碼（4~8 位數字）</label><input id="newPinInput" type="password" inputmode="numeric" maxlength="8"></div>
+          <div><label>&nbsp;</label><button class="main-btn blue-btn" onclick="changePin()">變更管理密碼</button></div>
+          <div><label>&nbsp;</label><button class="main-btn gray-btn" onclick="loadDbInfo()">顯示資料庫連結</button></div>
+        </div>
+        <div id="systemMsg" class="message"></div>
+      </div>
+    </section>
+  </div>
+</section>
+
+<!-- ================= 設定 ================= -->
+<section id="tab-settings" class="tab-page">
+  <div class="admin-layout">
+    <section class="panel">
+      <h2 class="section-title">藍牙出單機（Android App）</h2>
+      <div class="field-grid">
+        <div><label>已配對藍牙裝置</label><select id="btDeviceSelect"></select></div>
+        <div><label>&nbsp;</label><button class="main-btn gray-btn" onclick="loadBtDevices()">重新抓藍牙裝置</button></div>
+        <div><label>&nbsp;</label><button class="main-btn blue-btn" onclick="setBtPrinter()">設為出單機</button></div>
+      </div>
+      <div class="hint" id="btHint">藍牙印表機請先在 Android「設定 → 藍牙」完成配對（常見 PIN：0000 或 1234）。出單機選擇記錄在這台平板上。</div>
+
+      <h2 class="section-title" style="margin-top:16px;">列印與店家設定</h2>
+      <div class="field-grid">
+        <div><label>店名</label><input id="sShopName"></div>
+        <div><label>地址</label><input id="sShopAddress"></div>
+        <div><label>電話</label><input id="sShopPhone"></div>
+        <div><label>提示語</label><input id="sFooterMsg"></div>
+        <div><label>列印模式</label>
+          <select id="sPrintMode">
+            <option value="bluetooth">Android App 藍牙 ESC/POS</option>
+            <option value="browser">瀏覽器列印（電腦測試用）</option>
+            <option value="none">不列印</option>
+          </select></div>
+        <div><label>紙寬</label>
+          <select id="sPaperWidth"><option value="58">58 mm（32 字）</option><option value="80">80 mm（48 字）</option></select></div>
+        <div><label>中文編碼</label>
+          <select id="sEncoding"><option value="big5">big5（繁中建議）</option><option value="cp950">cp950</option><option value="gbk">gbk</option><option value="gb18030">gb18030</option><option value="utf-8">utf-8</option></select></div>
+        <div><label>列印濃度</label>
+          <select id="sDarkness"><option value="light">淡</option><option value="normal">標準</option><option value="dark">濃</option><option value="extra_dark">最濃</option></select></div>
+        <div><label>行距比例</label>
+          <select id="sLineSpacing"><option>70</option><option>80</option><option>90</option><option>100</option><option>110</option><option>120</option><option>130</option><option>140</option><option>150</option><option>160</option></select></div>
+        <div><label>EAN13 內部前綴</label><input id="sEanPrefix" maxlength="5"></div>
+        <div><label>條碼最大寬度 %</label>
+          <select id="sBarcodeWidth"><option>70</option><option>80</option><option>85</option><option>88</option><option>90</option><option>92</option><option>95</option><option>100</option></select></div>
+        <div><label>單號同步條碼</label><select id="sAlwaysBarcode"><option value="1">開啟</option><option value="0">關閉</option></select></div>
+        <div><label>結帳後開錢箱</label><select id="sOpenDrawer"><option value="0">關閉</option><option value="1">開啟</option></select></div>
+        <div><label>自動切紙</label><select id="sCutPaper"><option value="1">開啟</option><option value="0">關閉</option></select></div>
+        <div><label>出紙空白行</label><input id="sFeedLines" type="number" min="0" max="10"></div>
+        <div><label>左邊界 mm</label><input id="sMarginLeft" type="number" step="0.5" min="0" max="30"></div>
+        <div><label>上邊界 mm</label><input id="sMarginTop" type="number" step="0.5" min="0" max="30"></div>
+        <div><label>開始 X 距離 mm</label><input id="sStartX" type="number" step="0.5" min="0" max="30"></div>
+        <div><label>開始 Y 距離 mm</label><input id="sStartY" type="number" step="0.5" min="0" max="30"></div>
+      </div>
+      <div class="action-row">
+        <button class="main-btn blue-btn" onclick="saveSettings()">儲存設定</button>
+        <button class="main-btn test-btn" onclick="testPrint(false)">測試列印</button>
+        <button class="main-btn test-btn" onclick="testPrint(true)">只測條碼</button>
+        <button class="main-btn gray-btn" onclick="testDrawer()">測試開錢箱</button>
+      </div>
+      <div id="settingsMsg" class="message"></div>
+      <div id="settingsReceipt" class="receipt-preview"></div>
+    </section>
+
+    <section class="panel">
+      <h2 class="section-title">單據版型編輯</h2>
+      <div class="hint">可調整每個區塊：顯示、字級、字重、對齊、X 位移、上距、下距。藍牙 ESC/POS 以近似方式套用（字級 12↑雙高、16↑雙寬雙高；字重 700↑粗體）。</div>
+      <div class="action-row">
+        <button class="main-btn blue-btn" onclick="saveLayout()">儲存版型</button>
+        <button class="main-btn gray-btn" onclick="resetLayoutDefault()">恢復預設</button>
+      </div>
+      <div id="layoutEditorArea" style="margin-top:12px;"></div>
+      <h2 class="section-title" style="font-size:18px;margin-top:14px;">版型預覽</h2>
+      <div id="layoutPreviewArea" class="layout-preview-box"></div>
+    </section>
+  </div>
+</section>
+
+<!-- ================= 結帳鍵盤 ================= -->
+<div id="checkoutOverlay" class="checkout-overlay">
+  <div class="checkout-modal">
+    <div class="checkout-head">
+      <div class="checkout-title">現金結帳</div>
+      <button class="checkout-close" onclick="closeCheckout()">關閉</button>
+    </div>
+    <div class="checkout-screen">
+      <div class="checkout-row"><span>應收金額</span><span id="checkoutTotal">0 元</span></div>
+      <div class="checkout-row"><span>收款金額</span><span></span></div>
+      <div id="checkoutReceived" class="checkout-input">0</div>
+      <div class="checkout-row big"><span>找零金額</span><span id="checkoutChange">尚未計算</span></div>
+    </div>
+    <div class="quick-cash">
+      <button class="key-btn" onclick="setExactCash()">剛好</button>
+      <button class="key-btn" onclick="setCashAmount(100)">$100</button>
+      <button class="key-btn" onclick="setCashAmount(500)">$500</button>
+      <button class="key-btn" onclick="setCashAmount(1000)">$1000</button>
+    </div>
+    <div class="keypad">
+      <button class="key-btn" onclick="keypadInput('7')">7</button>
+      <button class="key-btn" onclick="keypadInput('8')">8</button>
+      <button class="key-btn" onclick="keypadInput('9')">9</button>
+      <button class="key-btn" onclick="keypadInput('4')">4</button>
+      <button class="key-btn" onclick="keypadInput('5')">5</button>
+      <button class="key-btn" onclick="keypadInput('6')">6</button>
+      <button class="key-btn" onclick="keypadInput('1')">1</button>
+      <button class="key-btn" onclick="keypadInput('2')">2</button>
+      <button class="key-btn" onclick="keypadInput('3')">3</button>
+      <button class="key-btn fn" onclick="keypadBackspace()">退格</button>
+      <button class="key-btn" onclick="keypadInput('0')">0</button>
+      <button class="key-btn fn" onclick="keypadClear()">清除</button>
+      <button class="key-btn calc" onclick="prepareCheckoutPayment()">計算找零</button>
+      <button class="key-btn fn" onclick="keypadInput('00')">00</button>
+      <button class="key-btn calc" onclick="prepareCheckoutPayment()">計算</button>
+      <button id="checkoutNoPrintBtn" class="key-btn no-print" onclick="confirmCheckout(false)">結帳（不列印）</button>
+      <button id="checkoutConfirmBtn" class="key-btn confirm" onclick="confirmCheckout(true)">結帳並列印</button>
+    </div>
+    <div id="checkoutMsg" class="checkout-msg"></div>
+  </div>
+</div>
+
+<!-- ================= 管理密碼 ================= -->
+<div id="pinOverlay" class="pin-overlay">
+  <div class="pin-modal">
+    <div class="checkout-title" style="margin-bottom:10px;">請輸入管理密碼</div>
+    <input id="pinInput" class="pin-input" type="password" inputmode="numeric" maxlength="8" onkeydown="if(event.key==='Enter')submitPin()">
+    <div id="pinMsg" class="checkout-msg"></div>
+    <div class="action-row"><button class="main-btn blue-btn" onclick="submitPin()">確認</button><button class="main-btn gray-btn" onclick="cancelPin()">取消</button></div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+/* ======================================================================
+ * MPOS Cloud 前端（在 GAS iframe 內執行）
+ * - 資料：google.script.run → Api.js
+ * - 列印：postMessage → GitHub Pages 外殼 → Android App 藍牙 ESC/POS
+ * ====================================================================== */
+var GAS_VERSION = <?!= JSON.stringify(appVersion) ?>;
+var appData = {menu:[], all_menu:[], notes:[], all_notes:[], settings:{}, layout:[], default_layout:[], today:''};
+var cart = {};
+var selectedNotes = [];
+var checkoutCash = '';
+var checkoutChangeAmount = 0;
+var adminPin = '';
+var busy = false;
+
+/* ---------- 共用 ---------- */
+function $(id){return document.getElementById(id);}
+function escapeHtml(s){return String(s == null ? '' : s).replace(/[&<>'"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c];});}
+function money(n){return (parseInt(n||0,10)||0) + ' 元';}
+function showMsg(id,type,text){var el=$(id);if(!el)return;el.className='message '+type;el.innerText=text;}
+function showReceipt(id,text){var el=$(id);if(!el)return;el.style.display='block';el.innerText=text||'';}
+function toast(text,ms){var t=$('toast');t.innerText=text;t.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove('show');},ms||2500);}
+
+/** google.script.run → Promise；回傳 ok:false 會 reject */
+function api(fn){
+  var args = Array.prototype.slice.call(arguments,1);
+  return new Promise(function(resolve,reject){
+    var runner = google.script.run
+      .withSuccessHandler(function(r){ if(r && r.ok===false) reject(new Error(r.message||'伺服器錯誤')); else resolve(r); })
+      .withFailureHandler(function(e){ reject(e instanceof Error ? e : new Error(String((e && e.message) || e))); });
+    runner[fn].apply(runner,args);
+  });
+}
+
+/* ---------- 外殼橋接（postMessage） ---------- */
+var Bridge = {
+  seq:0, pending:{}, info:null,
+  inShell:function(){ try{ return window.top !== window.self; }catch(e){ return true; } },
+  call:function(method, params, timeoutMs){
+    var self=this;
+    return new Promise(function(resolve,reject){
+      if(!self.inShell()){ reject(new Error('未在 MPOS App/外殼內執行')); return; }
+      var id='g'+(++self.seq)+'_'+Date.now();
+      var timer=setTimeout(function(){ delete self.pending[id]; reject(new Error('外殼沒有回應（'+method+' 逾時）')); }, timeoutMs||15000);
+      self.pending[id]={resolve:resolve,reject:reject,timer:timer};
+      window.top.postMessage({source:'mpos-gas', id:id, method:method, params:params||{}}, '*');
+    });
+  },
+  onMessage:function(ev){
+    var d=ev.data;
+    if(!d || d.source!=='mpos-shell') return;
+    if(d.event){ handleShellEvent(d); return; }
+    var p=this.pending[d.id]; if(!p) return;
+    delete this.pending[d.id]; clearTimeout(p.timer);
+    if(d.ok) p.resolve(d.result); else p.reject(new Error(d.error||'外殼回傳失敗'));
+  },
+  isNative:function(){ return !!(this.info && this.info.native); }
+};
+window.addEventListener('message', function(ev){ Bridge.onMessage(ev); });
+
+function handleShellEvent(d){
+  if(d.event==='printer_changed'){ Bridge.info = Object.assign(Bridge.info||{}, {printer:d.printer}); updateBridgeChip(); }
+}
+
+function updateBridgeChip(){
+  var chip=$('bridgeChip'); var mode=(appData.settings||{}).print_mode||'bluetooth';
+  if(mode==='none'){ chip.className='bridge-chip'; chip.innerText='不列印模式'; return; }
+  if(Bridge.isNative()){
+    var p=Bridge.info.printer||{};
+    chip.className='bridge-chip '+(p.address?'ok':'warn');
+    chip.innerText = p.address ? ('藍牙：'+(p.name||p.address)) : 'App：尚未選擇出單機';
+  } else if(Bridge.info){
+    chip.className='bridge-chip warn'; chip.innerText='網頁外殼（無藍牙）';
+  } else {
+    chip.className='bridge-chip err'; chip.innerText='未在 App 內（僅預覽）';
+  }
+}
+
+async function detectBridge(){
+  try{
+    Bridge.info = await Bridge.call('hello', {gas_version:GAS_VERSION}, 4000);
+  }catch(e){ Bridge.info = null; }
+  updateBridgeChip();
+}
+
+/* ---------- 列印 ---------- */
+async function printJob(job){
+  var mode=(appData.settings||{}).print_mode||'bluetooth';
+  if(mode==='none') return {skipped:true, printer:'不列印模式'};
+  if(mode==='browser' || !Bridge.isNative()){
+    if(mode==='bluetooth' && !Bridge.isNative()){
+      throw new Error('目前不是在 Android App 內開啟，無法藍牙出單。可改用「瀏覽器列印」模式或用 App 開啟。');
+    }
+    return browserPrint(job);
+  }
+  return await Bridge.call('print', {job:job}, 45000);
+}
+
+function ean13Bits(code){
+  var L=['0001101','0011001','0010011','0111101','0100011','0110001','0101111','0111011','0110111','0001011'];
+  var G=['0100111','0110011','0011011','0100001','0011101','0111001','0000101','0010001','0001001','0010111'];
+  var R=['1110010','1100110','1101100','1000010','1011100','1001110','1010000','1000100','1001000','1110100'];
+  var P=['OOOOOO','OOEOEE','OOEEOE','OOEEEO','OEOOEE','OEEOOE','OEEEOO','OEOEOE','OEOEEO','OEEOEO'];
+  var p=P[+code[0]], b='00000000000101';
+  for(var i=1;i<=6;i++) b+=(p[i-1]==='O'?L:G)[+code[i]];
+  b+='01010'; for(var j=7;j<=12;j++) b+=R[+code[j]]; return b+'10100000000000';
+}
+function barcodeSvg(code){
+  if(!/^\d{13}$/.test(code||'')) return '';
+  var bits=ean13Bits(code), rects='';
+  for(var i=0;i<bits.length;i++) if(bits[i]==='1') rects+='<rect x="'+i+'" y="0" width="1" height="50"/>';
+  return '<svg viewBox="0 0 '+bits.length+' 50" preserveAspectRatio="none" style="width:100%;height:60px">'+rects+'</svg><div style="text-align:center;font-size:11px">'+code+'</div>';
+}
+
+function browserPrint(job){
+  var w = window.open('', '_blank', 'width=420,height=720');
+  if(!w) throw new Error('瀏覽器擋住了列印視窗，請允許彈出視窗。');
+  var html = '<html><head><meta charset="utf-8"><title>'+escapeHtml(job.order_no)+'</title><style>body{font-family:monospace;width:'+(job.printer.paper_width_mm==80?'72mm':'48mm')+';margin:0;padding:4px}div{white-space:pre}</style></head><body>';
+  job.lines.forEach(function(l){
+    var style='font-size:'+(l.font_pt+2)+'px;font-weight:'+(l.bold?'900':'400')+';text-align:'+l.align+';margin-top:'+l.space_before+'px;margin-bottom:'+l.space_after+'px';
+    html += l.role==='barcode' ? '<div style="'+style+'">'+barcodeSvg(job.ean13)+'</div>' : '<div style="'+style+'">'+escapeHtml(l.text)+'</div>';
+  });
+  html += '<script>window.onload=function(){window.print();}<\/script></body></html>';
+  w.document.write(html); w.document.close();
+  return {printer:'瀏覽器列印'};
+}
+
+/* ---------- 啟動 ---------- */
+async function bootstrap(){
+  var j = await api('apiBootstrap');
+  appData = j;
+  if(!$('adminDate').value) $('adminDate').value = j.today;
+  $('shopNameTitle').innerText = j.shop.name || '';
+  $('shopAddressHeader').innerText = j.shop.address || '';
+  $('shopPhoneHeader').innerText = j.shop.phone || '';
+  document.title = (j.shop.name||'') + ' POS';
+  renderMenu();renderNotes();renderCart();renderAdminMenu();renderAdminNotes();renderLayoutEditor();renderLayoutPreview();applySettingsToUi();updateBridgeChip();
+}
+
+window.addEventListener('load', async function(){
+  detectBridge();
+  try{ await bootstrap(); }
+  catch(e){ $('loadingMask').innerText='資料載入失敗：'+e.message+'\n請確認已執行 setup() 並重新整理。'; return; }
+  $('loadingMask').style.display='none';
+  window.__MPOS_READY__ = true;
+  if(Bridge.inShell()) window.top.postMessage({source:'mpos-gas', method:'ready', id:null, params:{version:GAS_VERSION}}, '*');
+});
+
+/* ---------- 分頁 / 管理密碼 ---------- */
+var pinResolver = null;
+function askPin(){
+  if(adminPin) return Promise.resolve(adminPin);
+  return new Promise(function(resolve,reject){
+    pinResolver={resolve:resolve,reject:reject};
+    $('pinInput').value=''; $('pinMsg').innerText='';
+    $('pinOverlay').classList.add('show'); setTimeout(function(){$('pinInput').focus();},50);
+  });
+}
+async function submitPin(){
+  var pin=$('pinInput').value.trim();
+  try{ await api('apiVerifyPin', pin); adminPin=pin; $('pinOverlay').classList.remove('show'); if(pinResolver){pinResolver.resolve(pin);pinResolver=null;} }
+  catch(e){ $('pinMsg').innerText=e.message; }
+}
+function cancelPin(){ $('pinOverlay').classList.remove('show'); if(pinResolver){pinResolver.reject(new Error('已取消'));pinResolver=null;} }
+
+async function switchTab(name){
+  if(name==='admin' || name==='settings'){
+    try{ await askPin(); }catch(e){ return; }
+  }
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.tab===name); });
+  document.querySelectorAll('.tab-page').forEach(function(p){ p.classList.remove('active'); });
+  $('tab-'+name).classList.add('active');
+  if(name==='orders') loadOrders();
+  if(name==='settings') loadBtDevices();
+}
+function switchAdminSection(name, btn){
+  document.querySelectorAll('.admin-subtab').forEach(function(b){b.classList.remove('active');});
+  document.querySelectorAll('.admin-section').forEach(function(s){s.classList.remove('active');});
+  if(btn) btn.classList.add('active');
+  $('admin-'+name).classList.add('active');
+}
+
+/* ---------- 點餐 ---------- */
+function groupByCategory(items){var g={},order=[];items.forEach(function(it){if(!g[it.category]){g[it.category]=[];order.push(it.category);}g[it.category].push(it);});return {g:g,order:order};}
+function renderMenu(){
+  var gr=groupByCategory(appData.menu||[]), html='';
+  gr.order.forEach(function(cat){
+    html+='<div class="category"><div class="category-title">'+escapeHtml(cat)+'</div><div class="menu-grid">';
+    gr.g[cat].forEach(function(item){ html+='<button class="item-btn" data-id="'+escapeHtml(item.id)+'" onclick="addItem(this.dataset.id)"><div class="item-name">'+escapeHtml(item.name)+'</div><div class="item-price">'+money(item.price)+'</div></button>'; });
+    html+='</div></div>';
+  });
+  $('menuArea').innerHTML = html || '<div class="cart-empty">尚無啟用商品</div>';
+}
+function addItem(id){var item=(appData.menu||[]).filter(function(x){return String(x.id)===String(id);})[0];if(!item)return;if(!cart[id])cart[id]={id:item.id,name:item.name,price:item.price,qty:0};cart[id].qty++;renderCart();}
+function changeQty(id,d){if(!cart[id])return;cart[id].qty+=d;if(cart[id].qty<=0)delete cart[id];renderCart();}
+function cartItems(){return Object.keys(cart).map(function(k){return cart[k];}).filter(function(x){return x.qty>0;});}
+function total(){return cartItems().reduce(function(s,i){return s+i.price*i.qty;},0);}
+function renderCart(){
+  var items=cartItems(), area=$('cartArea');
+  if(!items.length){area.className='cart-empty';area.innerHTML='尚未點選商品';$('totalValue').innerText='0 元';return;}
+  area.className=''; var html='';
+  items.forEach(function(item){
+    var id=escapeHtml(item.id);
+    html+='<div class="cart-row"><div><div class="cart-name">'+escapeHtml(item.name)+'</div><div class="cart-meta">單價 '+money(item.price)+'</div><div class="subtotal">小計 '+money(item.price*item.qty)+'</div></div>'+
+      '<div class="qty-box"><button class="qty-btn minus" data-id="'+id+'" onclick="changeQty(this.dataset.id,-1)">－</button><div class="qty-num">'+item.qty+'</div><button class="qty-btn" data-id="'+id+'" onclick="changeQty(this.dataset.id,1)">＋</button></div></div>';
+  });
+  area.innerHTML=html; $('totalValue').innerText=money(total());
+}
+function renderNotes(){
+  var html='';
+  (appData.notes||[]).forEach(function(n,i){ var active=selectedNotes.indexOf(n.text)>=0?'active':''; html+='<button class="note-chip '+active+'" onclick="toggleNote('+i+')">'+escapeHtml(n.text)+'</button>'; });
+  $('notePresetArea').innerHTML = html || '<div class="hint">尚未建立快速備註，可到後台管理新增。</div>';
+}
+function toggleNote(i){var t=appData.notes[i].text;var k=selectedNotes.indexOf(t);if(k>=0)selectedNotes.splice(k,1);else selectedNotes.push(t);renderNotes();}
+function combinedNote(){var arr=selectedNotes.slice();var c=$('customNoteInput').value.trim();if(c)arr.push(c);return arr.join('、');}
+function clearCart(withMsg){cart={};selectedNotes=[];$('customNoteInput').value='';renderCart();renderNotes();if(withMsg){showMsg('posMsg','ok','訂單已清空。');$('receiptPreview').style.display='none';}}
+function orderPayload(printFlag, pay){
+  var p={items:cartItems().map(function(i){return {id:i.id,qty:i.qty};}), note:combinedNote(), print:printFlag};
+  if(pay){p.cash_received=pay.received;p.change_amount=pay.change_amount;p.payment_method='cash';}
+  return p;
+}
+async function previewReceipt(){
+  if(!cartItems().length){showMsg('posMsg','err','尚未點選商品，無法預覽。');return;}
+  try{ var j=await api('apiPreview', orderPayload(false)); showMsg('posMsg','ok','預覽完成\n總金額：'+money(j.total)); showReceipt('receiptPreview', j.receipt); }
+  catch(e){ showMsg('posMsg','err',e.message); }
+}
+
+async function createOrder(printFlag, pay){
+  if(busy) return;
+  if(!cartItems().length){showMsg('posMsg','err','尚未點選商品。');return;}
+  busy=true;
+  showMsg('posMsg','ok', printFlag?'結帳列印中...':(pay?'結帳中...':'建立訂單中...'));
+  try{
+    var j=await api('apiCreateOrder', orderPayload(printFlag, pay));
+    var o=j.order, msg=j.message+'\n單號：'+o.order_no+'\n條碼：'+(o.barcode_no||'')+'\n總金額：'+money(o.total)+'\n狀態：待完成';
+    if(o.cash_received) msg+='\n收款：'+money(o.cash_received)+'\n找零：'+money(o.change_amount);
+    var printErr='';
+    if(j.print_job){
+      try{
+        var pr=await printJob(j.print_job);
+        if(!pr || !pr.skipped){ await api('apiMarkPrinted', o.id); msg+='\n列印成功：'+((pr&&pr.printer)||''); }
+      }catch(pe){ printErr=pe.message; msg+='\n\n列印錯誤：'+printErr+'\n可到「今日訂單」按「補印」。'; }
+    }
+    showMsg('posMsg', printErr?'err':'ok', msg);
+    showReceipt('receiptPreview', o.receipt);
+    closeCheckout(false);
+    clearCart(false);
+    toast(printErr ? '訂單已建立，但列印失敗' : '訂單 '+o.order_no+' 已建立');
+  }catch(e){
+    showMsg('posMsg','err',e.message);
+    $('checkoutMsg').innerText=e.message;
+  }finally{ busy=false; }
+}
+
+/* ---------- 結帳鍵盤 ---------- */
+function openCheckout(){
+  if(!cartItems().length){showMsg('posMsg','err','尚未點選商品，無法結帳。');return;}
+  checkoutCash='';checkoutChangeAmount=0;$('checkoutMsg').innerText='';
+  $('checkoutTotal').innerText=money(total());
+  $('checkoutOverlay').classList.add('show'); updateCheckoutUi(false);
+}
+function closeCheckout(clear){ $('checkoutOverlay').classList.remove('show'); checkoutCash=''; if(clear!==false) $('checkoutMsg').innerText=''; }
+function updateCheckoutUi(calculated){ $('checkoutReceived').innerText=checkoutCash||'0'; $('checkoutChange').innerText=calculated?money(checkoutChangeAmount):'尚未計算'; }
+function keypadInput(v){ if(checkoutCash.length>=7)return; checkoutCash=(checkoutCash+String(v)).replace(/^0+(?=\d)/,''); updateCheckoutUi(false); }
+function keypadBackspace(){ checkoutCash=checkoutCash.slice(0,-1); updateCheckoutUi(false); }
+function keypadClear(){ checkoutCash=''; checkoutChangeAmount=0; $('checkoutMsg').innerText=''; updateCheckoutUi(false); }
+function setCashAmount(a){ checkoutCash=String(a); prepareCheckoutPayment(); }
+function setExactCash(){ checkoutCash=String(total()); prepareCheckoutPayment(); }
+function prepareCheckoutPayment(){
+  var due=total(), raw=String(checkoutCash||'').trim();
+  if(!raw){ checkoutCash=String(due); checkoutChangeAmount=0; updateCheckoutUi(true); $('checkoutMsg').innerText='未輸入收款金額，已自動設定為剛好 '+money(due)+'。'; return {ok:true,received:due,change_amount:0}; }
+  var received=parseInt(raw,10);
+  if(!(received>0)){ $('checkoutMsg').innerText='請輸入正確的收款金額，或直接按結帳視為剛好。'; updateCheckoutUi(false); return {ok:false}; }
+  if(received<due){ $('checkoutMsg').innerText='收款不足，還差 '+money(due-received)+'。'; updateCheckoutUi(false); return {ok:false}; }
+  checkoutChangeAmount=received-due; updateCheckoutUi(true);
+  $('checkoutMsg').innerText='已計算完成：收款 '+money(received)+'，找零 '+money(checkoutChangeAmount)+'。';
+  return {ok:true,received:received,change_amount:checkoutChangeAmount};
+}
+function confirmCheckout(printFlag){ var pay=prepareCheckoutPayment(); if(!pay.ok)return; createOrder(printFlag, pay); }
+
+/* ---------- 今日訂單 ---------- */
+function statusLabel(s){return ({pending:'待完成',completed:'已完成',cancelled:'已取消'})[s]||s;}
+async function loadOrders(){
+  var date=$('adminDate').value||appData.today, status=$('adminStatus').value||'';
+  $('ordersArea').innerHTML='<div class="cart-empty">訂單資料讀取中...</div>';
+  try{
+    var j=await api('apiOrders', date, status);
+    renderSummary(j.summary||{}); renderOrders(j.orders||[]); renderSales((j.summary&&j.summary.items)||[]);
+  }catch(e){
+    $('ordersArea').innerHTML='<div class="message err" style="display:block">訂單讀取失敗：'+escapeHtml(e.message)+'</div>';
+  }
+}
+function renderSummary(s){
+  var b=s.by_status||{}, p=b.pending||{}, c=b.completed||{}, x=b.cancelled||{};
+  $('summaryArea').innerHTML=
+    '<div class="stat-card"><div class="stat-title">待完成</div><div class="stat-value">'+(p.cnt||0)+'</div><div>'+money(p.amount)+'</div></div>'+
+    '<div class="stat-card"><div class="stat-title">已完成</div><div class="stat-value">'+(c.cnt||0)+'</div><div>'+money(c.amount)+'</div></div>'+
+    '<div class="stat-card"><div class="stat-title">已取消</div><div class="stat-value">'+(x.cnt||0)+'</div><div>'+money(x.amount)+'</div></div>'+
+    '<div class="stat-card"><div class="stat-title">有效營收</div><div class="stat-value">'+money((p.amount||0)+(c.amount||0))+'</div><div>不含取消</div></div>';
+}
+function renderOrders(orders){
+  if(!orders.length){$('ordersArea').innerHTML='<div class="cart-empty">此條件無訂單</div>';return;}
+  var html='<table><thead><tr><th style="width:150px">單號 / 條碼</th><th style="width:86px">狀態</th><th>訂單明細</th><th>備註</th><th style="width:130px">金額 / 付款</th><th style="width:170px">時間</th><th style="width:150px">動作</th></tr></thead><tbody>';
+  orders.forEach(function(o){
+    var items='<table class="order-items-table"><thead><tr><th>品名</th><th>數量</th><th>單價</th><th>小計</th></tr></thead><tbody>';
+    (o.items||[]).forEach(function(i){ items+='<tr><td>'+escapeHtml(i.name)+'</td><td class="num-cell">'+i.qty+'</td><td class="num-cell">'+money(i.price)+'</td><td class="num-cell"><b>'+money(i.subtotal)+'</b></td></tr>'; });
+    items+='</tbody></table>';
+    var pay=o.cash_received>0?'<br><span class="hint">收款：'+money(o.cash_received)+'<br>找零：'+money(o.change_amount)+'</span>':'<br><span class="hint">未記錄收款</span>';
+    var id=parseInt(o.id,10);
+    var actions='<button class="small-btn blue-btn" onclick="reprintOrder('+id+')">補印</button>';
+    if(o.status==='pending') actions='<button class="small-btn ok-btn" onclick="completeOrder('+id+')">完成</button><button class="small-btn danger-btn" onclick="cancelOrder('+id+')">取消</button>'+actions;
+    html+='<tr><td><b>'+escapeHtml(o.order_no)+'</b><br><span class="hint">條碼：'+escapeHtml(o.barcode_no)+'</span>'+(o.printed_at?'':'<br><span class="hint" style="color:#b3261e">未列印</span>')+'</td><td><span class="badge '+escapeHtml(o.status)+'">'+statusLabel(o.status)+'</span></td><td>'+items+'</td><td>'+escapeHtml(o.note)+'</td><td><b>'+money(o.total)+'</b>'+pay+'</td><td>'+escapeHtml(o.created_at)+(o.completed_at?'<br>完成：'+escapeHtml(o.completed_at):'')+(o.cancelled_at?'<br>取消：'+escapeHtml(o.cancelled_at):'')+'</td><td>'+actions+'</td></tr>';
+  });
+  $('ordersArea').innerHTML=html+'</tbody></table>';
+}
+function renderSales(items){
+  if(!items.length){$('salesArea').innerHTML='<div class="cart-empty">尚無銷售資料</div>';return;}
+  var html='<table><thead><tr><th>品項</th><th>數量</th><th>金額</th></tr></thead><tbody>';
+  items.forEach(function(i){html+='<tr><td>'+escapeHtml(i.name)+'</td><td class="num-cell">'+i.qty+'</td><td class="num-cell">'+money(i.amount)+'</td></tr>';});
+  $('salesArea').innerHTML=html+'</tbody></table>';
+}
+async function completeOrder(id){ if(!confirm('確認此訂單已完成？'))return; try{await api('apiCompleteOrder',id);}catch(e){alert(e.message);} loadOrders(); }
+async function cancelOrder(id){ if(!confirm('確認取消此訂單？'))return; try{await api('apiCancelOrder',id);}catch(e){alert(e.message);} loadOrders(); }
+async function reprintOrder(id){
+  try{ var j=await api('apiReprintJob',id); j.print_job.printer.open_cash_drawer=false; var pr=await printJob(j.print_job); if(!pr||!pr.skipped) await api('apiMarkPrinted',id); toast('補印成功：'+j.order_no); loadOrders(); }
+  catch(e){ alert('補印失敗：'+e.message); }
+}
+async function lookupOrder(){
+  var v=$('lookupInput').value.trim(); if(!v){showMsg('lookupMsg','err','請輸入單號');return;}
+  try{
+    var o=(await api('apiLookup',v)).order;
+    $('adminDate').value=o.order_date; $('adminStatus').value='';
+    showMsg('lookupMsg','ok','查詢成功：'+o.order_no+'（'+statusLabel(o.status)+'）  '+money(o.total)+'\n'+(o.items||[]).map(function(i){return i.name+' x '+i.qty;}).join('、'));
+    loadOrders(); $('lookupInput').value='';
+  }catch(e){ showMsg('lookupMsg','err',e.message); }
+}
+
+/* ---------- 後台：商品 / 備註 ---------- */
+function renderAdminMenu(){
+  var html='<table><thead><tr><th>分類</th><th>品名</th><th>價格</th><th>排序</th><th>狀態</th><th>動作</th></tr></thead><tbody>';
+  (appData.all_menu||[]).forEach(function(m,i){ html+='<tr><td>'+escapeHtml(m.category)+'</td><td>'+escapeHtml(m.name)+'</td><td>'+money(m.price)+'</td><td>'+m.sort_order+'</td><td>'+(Number(m.active)?'啟用':'停用')+'</td><td><button class="small-btn blue-btn" onclick="editMenu('+i+')">編輯</button><button class="small-btn danger-btn" onclick="disableMenu('+i+')">停用</button></td></tr>'; });
+  $('menuAdminArea').innerHTML=html+'</tbody></table>';
+}
+function editMenu(i){var m=appData.all_menu[i];$('mId').value=m.id;$('mCategory').value=m.category;$('mName').value=m.name;$('mPrice').value=m.price;$('mSort').value=m.sort_order;$('mActive').value='1';}
+function clearMenuForm(){$('mId').value='';$('mCategory').value='';$('mName').value='';$('mPrice').value='0';$('mSort').value='100';$('mActive').value='1';}
+async function saveMenuItem(){
+  var p={id:$('mId').value,category:$('mCategory').value,name:$('mName').value,price:$('mPrice').value,sort_order:$('mSort').value,active:$('mActive').value};
+  try{ await api('apiSaveMenuItem', await askPin(), p); await bootstrap(); clearMenuForm(); toast('商品已儲存'); }catch(e){ alert(e.message); }
+}
+async function disableMenu(i){ if(!confirm('確認停用商品？歷史訂單仍會保留。'))return; try{ await api('apiDisableMenuItem', await askPin(), appData.all_menu[i].id); await bootstrap(); }catch(e){ alert(e.message); } }
+function renderAdminNotes(){
+  var html='<table><thead><tr><th>備註</th><th>排序</th><th>狀態</th><th>動作</th></tr></thead><tbody>';
+  (appData.all_notes||[]).forEach(function(n,i){ html+='<tr><td>'+escapeHtml(n.text)+'</td><td>'+n.sort_order+'</td><td>'+(Number(n.active)?'啟用':'停用')+'</td><td><button class="small-btn blue-btn" onclick="editNote('+i+')">編輯</button><button class="small-btn danger-btn" onclick="disableNote('+i+')">停用</button></td></tr>'; });
+  $('noteAdminArea').innerHTML=html+'</tbody></table>';
+}
+function editNote(i){var n=appData.all_notes[i];$('nId').value=n.id;$('nText').value=n.text;$('nSort').value=n.sort_order;$('nActive').value='1';}
+async function saveNote(){
+  var p={id:$('nId').value,text:$('nText').value,sort_order:$('nSort').value,active:$('nActive').value};
+  try{ await api('apiSaveNote', await askPin(), p); $('nId').value='';$('nText').value='';$('nSort').value='100'; await bootstrap(); toast('備註已儲存'); }catch(e){ alert(e.message); }
+}
+async function disableNote(i){ if(!confirm('確認停用備註？'))return; try{ await api('apiDisableNote', await askPin(), appData.all_notes[i].id); await bootstrap(); }catch(e){ alert(e.message); } }
+async function changePin(){
+  try{ var r=await api('apiChangePin', await askPin(), $('newPinInput').value); adminPin=$('newPinInput').value.trim(); $('newPinInput').value=''; showMsg('systemMsg','ok',r.message); }catch(e){ showMsg('systemMsg','err',e.message); }
+}
+async function loadDbInfo(){
+  try{ var r=await api('apiDbInfo', await askPin()); showMsg('systemMsg','ok','版本：'+r.version+'\n資料庫試算表：'+r.spreadsheet_url+'\nGAS 網址：'+r.web_app_url); }catch(e){ showMsg('systemMsg','err',e.message); }
+}
+
+/* ---------- 設定 ---------- */
+var SETTING_FIELDS = {
+  shop_name:'sShopName', shop_address:'sShopAddress', shop_phone:'sShopPhone', footer_msg:'sFooterMsg',
+  print_mode:'sPrintMode', paper_width_mm:'sPaperWidth', encoding:'sEncoding', print_darkness:'sDarkness',
+  line_spacing_percent:'sLineSpacing', ean13_prefix:'sEanPrefix', barcode_max_width_percent:'sBarcodeWidth',
+  always_print_barcode:'sAlwaysBarcode', open_cash_drawer:'sOpenDrawer', cut_paper:'sCutPaper', feed_lines_after:'sFeedLines',
+  print_margin_left_mm:'sMarginLeft', print_margin_top_mm:'sMarginTop', print_start_x_mm:'sStartX', print_start_y_mm:'sStartY'
+};
+function applySettingsToUi(){
+  var s=appData.settings||{};
+  Object.keys(SETTING_FIELDS).forEach(function(k){ var el=$(SETTING_FIELDS[k]); if(el && s[k]!==undefined) el.value=String(s[k]); });
+}
+function getSettingsFromUi(){ var o={}; Object.keys(SETTING_FIELDS).forEach(function(k){ o[k]=$(SETTING_FIELDS[k]).value; }); return o; }
+async function saveSettings(){
+  try{ var j=await api('apiSaveSettings', await askPin(), getSettingsFromUi()); appData.settings=j.settings; applySettingsToUi(); updateBridgeChip(); showMsg('settingsMsg','ok','設定已儲存。'); }
+  catch(e){ showMsg('settingsMsg','err',e.message); }
+}
+async function testPrint(barcodeOnly){
+  showMsg('settingsMsg','ok','測試列印中...（使用已儲存的設定）');
+  try{
+    var j=await api('apiTestPrintJob', !!barcodeOnly);
+    showReceipt('settingsReceipt', j.receipt);
+    var pr=await printJob(j.print_job);
+    showMsg('settingsMsg','ok','測試列印成功\n'+((pr&&pr.printer)||'')+'\nEAN13：'+j.ean13);
+  }catch(e){ showMsg('settingsMsg','err','測試列印失敗：'+e.message); }
+}
+async function testDrawer(){
+  try{ var r=await Bridge.call('openDrawer',{},20000); showMsg('settingsMsg','ok','已送出開錢箱指令 '+((r&&r.printer)||'')); }catch(e){ showMsg('settingsMsg','err',e.message); }
+}
+async function loadBtDevices(){
+  var sel=$('btDeviceSelect');
+  if(!Bridge.isNative()){ sel.innerHTML='<option value="">需在 Android App 內才能選擇藍牙裝置</option>'; return; }
+  sel.innerHTML='<option value="">讀取中...</option>';
+  try{
+    var r=await Bridge.call('listPrinters',{},15000);
+    var cur=(Bridge.info.printer||{}).address||'';
+    var html=(r.devices||[]).map(function(d){ return '<option value="'+escapeHtml(d.address)+'" data-name="'+escapeHtml(d.name)+'" '+(d.address===cur?'selected':'')+'>'+escapeHtml((d.name||'(未命名)')+' - '+d.address)+'</option>'; }).join('');
+    sel.innerHTML = html || '<option value="">沒有已配對的藍牙裝置</option>';
+  }catch(e){ sel.innerHTML='<option value="">'+escapeHtml(e.message)+'</option>'; }
+}
+async function setBtPrinter(){
+  var sel=$('btDeviceSelect'), opt=sel.options[sel.selectedIndex];
+  if(!opt || !opt.value){ showMsg('settingsMsg','err','請先選擇藍牙裝置。'); return; }
+  try{
+    var r=await Bridge.call('setPrinter',{address:opt.value,name:opt.dataset.name||''},15000);
+    Bridge.info.printer=r.printer; updateBridgeChip(); showMsg('settingsMsg','ok','出單機已設定：'+(r.printer.name||r.printer.address));
+  }catch(e){ showMsg('settingsMsg','err',e.message); }
+}
+
+/* ---------- 單據版型 ---------- */
+function layoutRows(){ return (appData.layout&&appData.layout.length)?appData.layout:(appData.default_layout||[]); }
+function renderLayoutEditor(){
+  var rows=layoutRows();
+  var html='<table class="layout-editor-table"><thead><tr><th>區塊</th><th>顯示</th><th>字級</th><th>字重</th><th>對齊</th><th>X位移</th><th>上距</th><th>下距</th></tr></thead><tbody>';
+  rows.forEach(function(r){
+    var w=parseInt(r.weight,10);
+    html+='<tr data-role="'+escapeHtml(r.role)+'" data-title="'+escapeHtml(r.title)+'"><td><b>'+escapeHtml(r.title)+'</b><br><span class="hint">'+escapeHtml(r.role)+'</span></td>'+
+      '<td><input type="checkbox" class="layout-show" '+(parseInt(r.show,10)?'checked':'')+' onchange="renderLayoutPreview()"></td>'+
+      '<td><input type="number" class="layout-font" min="6" max="24" value="'+parseInt(r.font_pt,10)+'" oninput="renderLayoutPreview()"></td>'+
+      '<td><select class="layout-weight" onchange="renderLayoutPreview()">'+[[300,'細'],[400,'標準'],[700,'粗'],[900,'最粗']].map(function(o){return '<option value="'+o[0]+'" '+(w===o[0]?'selected':'')+'>'+o[1]+'</option>';}).join('')+'</select></td>'+
+      '<td><select class="layout-align" onchange="renderLayoutPreview()">'+[['left','左'],['center','中'],['right','右']].map(function(o){return '<option value="'+o[0]+'" '+(r.align===o[0]?'selected':'')+'>'+o[1]+'</option>';}).join('')+'</select></td>'+
+      '<td><input type="number" class="layout-x" min="-300" max="300" value="'+parseInt(r.x_offset,10)+'" oninput="renderLayoutPreview()"></td>'+
+      '<td><input type="number" class="layout-before" min="0" max="80" value="'+parseInt(r.space_before,10)+'" oninput="renderLayoutPreview()"></td>'+
+      '<td><input type="number" class="layout-after" min="0" max="80" value="'+parseInt(r.space_after,10)+'" oninput="renderLayoutPreview()"></td></tr>';
+  });
+  $('layoutEditorArea').innerHTML=html+'</tbody></table>';
+}
+function getLayoutRowsFromUi(){
+  var rows=[];
+  document.querySelectorAll('#layoutEditorArea tr[data-role]').forEach(function(tr,i){
+    rows.push({role:tr.dataset.role,title:tr.dataset.title,sort_order:i*10,show:tr.querySelector('.layout-show').checked?1:0,
+      font_pt:parseInt(tr.querySelector('.layout-font').value||'8',10),weight:parseInt(tr.querySelector('.layout-weight').value||'400',10),
+      align:tr.querySelector('.layout-align').value,x_offset:parseInt(tr.querySelector('.layout-x').value||'0',10),
+      space_before:parseInt(tr.querySelector('.layout-before').value||'0',10),space_after:parseInt(tr.querySelector('.layout-after').value||'0',10)});
+  });
+  return rows;
+}
+async function saveLayout(){
+  try{ var j=await api('apiSaveLayout', await askPin(), getLayoutRowsFromUi()); appData.layout=j.layout; renderLayoutEditor(); renderLayoutPreview(); showMsg('settingsMsg','ok','版型已儲存。'); }
+  catch(e){ showMsg('settingsMsg','err',e.message); }
+}
+function resetLayoutDefault(){
+  if(!confirm('確認恢復預設版型？恢復後需再按「儲存版型」才會寫入。'))return;
+  appData.layout=JSON.parse(JSON.stringify(appData.default_layout||[])); renderLayoutEditor(); renderLayoutPreview();
+}
+function renderLayoutPreview(){
+  var rows=getLayoutRowsFromUi(); if(!rows.length) rows=layoutRows();
+  var st={}; rows.forEach(function(r){st[r.role]=r;});
+  var s=appData.settings||{};
+  var sample=[['barcode',''],['shop_name',s.shop_name||''],['separator','================================'],['order_no','單號：202607040002'],['time','時間：2026-07-04 03:18:19'],['separator','--------------------------------'],['item','白醬德式香腸（鹹）'],['item_header','數量  單價  小計'],['separator','--------------------------------'],['item',' 2     60    120'],['separator','--------------------------------'],['total','合計：120 元'],['separator','--------------------------------'],['payment','付款方式：現金'],['payment','收款：200 元'],['payment','找零：80 元'],['separator','--------------------------------'],['note','備註：'],['note','先做、分開裝'],['separator','--------------------------------'],['footer_msg',s.footer_msg||''],['address',s.shop_address||''],['phone','電話：'+(s.shop_phone||'')],['separator','================================']];
+  var html='';
+  sample.forEach(function(x){
+    var r=st[x[0]]||st.item||{}; if(!parseInt(r.show,10))return;
+    var style='font-size:'+parseInt(r.font_pt,10)+'px;font-weight:'+parseInt(r.weight,10)+';text-align:'+r.align+';transform:translateX('+parseInt(r.x_offset,10)+'px);margin-top:'+parseInt(r.space_before,10)+'px;margin-bottom:'+parseInt(r.space_after,10)+'px';
+    html+= x[0]==='barcode' ? '<div class="barcode-preview" style="'+style+'">'+barcodeSvg('2000007040021')+'</div>' : '<div class="layout-preview-line" style="'+style+'">'+escapeHtml(x[1])+'</div>';
+  });
+  $('layoutPreviewArea').innerHTML=html||'<div class="cart-empty">所有區塊皆已隱藏</div>';
+}
+</script>
+</body>
+</html>

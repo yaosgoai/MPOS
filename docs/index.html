@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#5e2808">
+<title>茉莉花鯛魚燒 POS</title>
+<style>
+  :root{--main:#8a3f12;--main2:#5e2808;--bg:#f7efe3;--danger:#b3261e}
+  html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;overscroll-behavior:none;font-family:"Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}
+  #gasFrame{position:fixed;inset:0;width:100%;height:100%;border:0;background:var(--bg)}
+  #overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:var(--bg);color:var(--main2);z-index:10;text-align:center;padding:20px}
+  #overlay.hidden{display:none}
+  .spinner{width:46px;height:46px;border:5px solid #e6cfa8;border-top-color:var(--main);border-radius:50%;animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #overlayTitle{font-size:24px;font-weight:900}
+  #overlayMsg{font-size:15px;max-width:520px;white-space:pre-wrap;color:#735c3f}
+  .btn{border:0;border-radius:12px;padding:12px 22px;font-size:18px;font-weight:900;background:var(--main);color:#fff;cursor:pointer}
+  #reloadBtn{position:fixed;left:6px;bottom:6px;z-index:5;width:34px;height:34px;border-radius:50%;border:0;background:rgba(94,40,8,.25);color:#fff;font-size:18px;cursor:pointer}
+  #updateBar{display:none;position:fixed;right:8px;bottom:8px;z-index:6;background:#1f5e9e;color:#fff;border-radius:12px;padding:10px 14px;font-weight:900;box-shadow:0 6px 16px rgba(0,0,0,.25)}
+  #updateBar a{color:#fff}
+</style>
+</head>
+<body>
+<iframe id="gasFrame" title="MPOS" allow="clipboard-write" referrerpolicy="no-referrer-when-downgrade"></iframe>
+<div id="overlay">
+  <div class="spinner" id="spinner"></div>
+  <div id="overlayTitle">POS 系統連線中...</div>
+  <div id="overlayMsg"></div>
+  <button class="btn" id="retryBtn" style="display:none" onclick="MPOS_SHELL.reload()">重新連線</button>
+</div>
+<button id="reloadBtn" title="重新整理" onclick="MPOS_SHELL.reload()">⟳</button>
+<div id="updateBar">有新版 App：<a id="updateLink" href="#" target="_blank">下載安裝</a></div>
+
+<script src="config.js"></script>
+<script>
+/**
+ * MPOS 外殼（GitHub Pages）
+ *  ┌ Android App WebView ─────────────────────────────┐
+ *  │  index.html（本頁）── iframe ──> GAS Web App      │
+ *  │       ▲  postMessage（mpos-gas / mpos-shell）     │
+ *  │       └─ window.AndroidPOS（藍牙 ESC/POS 列印）    │
+ *  └──────────────────────────────────────────────────┘
+ */
+(function(){
+  var CFG = window.MPOS_CONFIG || {};
+  var SHELL_VERSION = '1.0.0';
+  var READY_TIMEOUT_MS = CFG.readyTimeoutMs || 45000;
+  var frame = document.getElementById('gasFrame');
+  var overlay = document.getElementById('overlay');
+  var nativeCalls = {};   // id -> {source, origin}
+  var gasSource = null, gasOrigin = '*';
+  var readyTimer = null;
+
+  var state = window.MPOS_SHELL = {
+    version: SHELL_VERSION,
+    gasUrl: '',
+    gasReady: false,
+    native: !!window.AndroidPOS,
+    messages: 0,
+    lastPrint: null,
+    reload: function(){ load(true); }
+  };
+
+  function show(title, msg, retry){
+    overlay.classList.remove('hidden');
+    document.getElementById('overlayTitle').innerText = title;
+    document.getElementById('overlayMsg').innerText = msg || '';
+    document.getElementById('retryBtn').style.display = retry ? 'inline-block' : 'none';
+    document.getElementById('spinner').style.display = retry ? 'none' : 'block';
+  }
+
+  function gasUrl(){
+    var q = new URLSearchParams(location.search);
+    var url = q.get('gas') && CFG.allowGasOverride ? q.get('gas') : CFG.gasUrl;
+    return url || '';
+  }
+
+  function load(force){
+    state.gasReady = false;
+    var url = gasUrl();
+    state.gasUrl = url;
+    if(!url || url.indexOf('__GAS_URL__') >= 0){
+      show('尚未設定 GAS 網址', '請執行「一鍵部署.bat」，部署腳本會自動寫入 docs/config.js。', true);
+      return;
+    }
+    if(!navigator.onLine){
+      show('目前沒有網路', '請確認平板已連上 Wi-Fi 或行動網路後再重新連線。', true);
+      window.addEventListener('online', function once(){ window.removeEventListener('online', once); load(true); });
+      return;
+    }
+    show('POS 系統連線中...', '');
+    var sep = url.indexOf('?') >= 0 ? '&' : '?';
+    frame.src = url + (force ? sep + '_t=' + Date.now() : '');
+    clearTimeout(readyTimer);
+    readyTimer = setTimeout(function(){
+      if(!state.gasReady) show('連線逾時', 'GAS 後台在 ' + Math.round(READY_TIMEOUT_MS/1000) + ' 秒內沒有回應。\n可能是網路不穩，或 GAS 尚未完成授權 / setup()。', true);
+    }, READY_TIMEOUT_MS);
+  }
+
+  function originAllowed(origin){
+    if(origin === location.origin) return true; // 本機測試
+    var list = CFG.allowedOrigins || ['.googleusercontent.com', 'https://script.google.com'];
+    return list.some(function(p){ return p.charAt(0) === '.' ? origin.slice(-p.length) === p : origin === p; });
+  }
+
+  function reply(source, origin, id, ok, payload){
+    if(!source || !id) return;
+    var msg = {source:'mpos-shell', id:id, ok:ok};
+    if(ok) msg.result = payload; else msg.error = String(payload);
+    try{ source.postMessage(msg, origin || '*'); }catch(e){ source.postMessage(msg, '*'); }
+  }
+
+  function nativeInfo(){
+    if(!window.AndroidPOS) return {native:false, shell:true, shell_version:SHELL_VERSION};
+    var info = {};
+    try{ info = JSON.parse(window.AndroidPOS.getInfo() || '{}'); }catch(e){ info = {}; }
+    info.native = true; info.shell = true; info.shell_version = SHELL_VERSION;
+    checkApkUpdate(info);
+    return info;
+  }
+
+  /** 從 GitHub Releases 檢查是否有較新的 APK（tag 格式：app-v<versionCode>） */
+  function checkApkUpdate(info){
+    if(checkApkUpdate.done || !CFG.repo || !info.version_code) return;
+    checkApkUpdate.done = true;
+    fetch('https://api.github.com/repos/' + CFG.repo + '/releases/latest', {cache:'no-store'})
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(rel){
+        if(!rel || !rel.tag_name) return;
+        var m = String(rel.tag_name).match(/(\d+)$/);
+        if(!m || Number(m[1]) <= Number(info.version_code)) return;
+        var apk = (rel.assets || []).filter(function(a){ return /\.apk$/i.test(a.name); })[0];
+        document.getElementById('updateLink').href = apk ? apk.browser_download_url : rel.html_url;
+        document.getElementById('updateBar').style.display = 'block';
+      }).catch(function(){});
+  }
+
+  window.addEventListener('message', function(ev){
+    var d = ev.data;
+    if(!d || d.source !== 'mpos-gas') return;
+    if(!originAllowed(ev.origin)) { console.warn('[MPOS] 拒絕未知來源', ev.origin); return; }
+    state.messages++;
+    gasSource = ev.source; gasOrigin = ev.origin;
+
+    if(d.method === 'ready' || d.method === 'hello'){
+      if(!state.gasReady){
+        state.gasReady = true;
+        clearTimeout(readyTimer);
+        overlay.classList.add('hidden');
+      }
+      if(d.method === 'ready') return;
+      reply(ev.source, ev.origin, d.id, true, nativeInfo());
+      return;
+    }
+
+    // 其他方法都要交給 Android App
+    if(!window.AndroidPOS){
+      reply(ev.source, ev.origin, d.id, false, '此功能需要在 MPOS Android App 內使用（目前是一般瀏覽器）。');
+      return;
+    }
+    if(['print','listPrinters','setPrinter','openDrawer','getInfo'].indexOf(d.method) < 0){
+      reply(ev.source, ev.origin, d.id, false, '不支援的方法：' + d.method);
+      return;
+    }
+    nativeCalls[d.id] = {source:ev.source, origin:ev.origin, method:d.method};
+    if(d.method === 'print') state.lastPrint = {id:d.id, at:Date.now(), order_no:(d.params && d.params.job && d.params.job.order_no) || ''};
+    try{
+      window.AndroidPOS.call(String(d.id), String(d.method), JSON.stringify(d.params || {}));
+    }catch(e){
+      delete nativeCalls[d.id];
+      reply(ev.source, ev.origin, d.id, false, 'App 呼叫失敗：' + e.message);
+    }
+  });
+
+  /** 由 Android 端呼叫：回傳非同步結果 / 推送事件 */
+  window.MPOSNative = {
+    onResult: function(id, ok, payloadJson){
+      var c = nativeCalls[id]; if(!c) return;
+      delete nativeCalls[id];
+      var payload = payloadJson;
+      try{ payload = JSON.parse(payloadJson); }catch(e){ /* 錯誤訊息是純文字 */ }
+      if(c.method === 'print' && state.lastPrint && state.lastPrint.id === id) state.lastPrint.ok = !!ok;
+      reply(c.source, c.origin, id, !!ok, payload);
+    },
+    onEvent: function(name, payloadJson){
+      if(!gasSource) return;
+      var payload = {};
+      try{ payload = JSON.parse(payloadJson || '{}'); }catch(e){}
+      var msg = {source:'mpos-shell', event:name};
+      Object.keys(payload).forEach(function(k){ msg[k] = payload[k]; });
+      gasSource.postMessage(msg, gasOrigin || '*');
+    }
+  };
+
+  window.addEventListener('offline', function(){ show('網路已中斷', '恢復連線後會自動重新載入。', true); window.addEventListener('online', function once(){ window.removeEventListener('online', once); load(true); }); });
+  document.addEventListener('DOMContentLoaded', function(){ load(false); });
+  if(document.readyState !== 'loading') load(false);
+})();
+</script>
+</body>
+</html>

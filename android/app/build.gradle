@@ -1,0 +1,64 @@
+plugins {
+    id 'com.android.application'
+}
+
+def env = System.getenv()
+def shellUrl = project.findProperty('shellUrl') ?: 'https://example.github.io/MPOS/'
+def ksFile = env['MPOS_KEYSTORE_FILE']
+def hasReleaseKey = ksFile && file(ksFile).exists()
+
+android {
+    namespace 'tw.mpos.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'tw.mpos.app'
+        minSdk 24
+        targetSdk 34
+        versionCode Integer.parseInt(project.findProperty('versionCode').toString())
+        versionName project.findProperty('versionName').toString()
+        buildConfigField 'String', 'SHELL_URL', "\"${shellUrl}\""
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    signingConfigs {
+        release {
+            if (hasReleaseKey) {
+                storeFile file(ksFile)
+                storePassword env['MPOS_KEYSTORE_PASSWORD']
+                keyAlias env['MPOS_KEY_ALIAS'] ?: 'mpos'
+                keyPassword env['MPOS_KEY_PASSWORD'] ?: env['MPOS_KEYSTORE_PASSWORD']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // 沒有正式金鑰時退回 debug 簽章，確保仍可產出可安裝的 APK
+            signingConfig hasReleaseKey ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test:rules:1.6.1'
+}

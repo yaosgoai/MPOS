@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<title>流水號查詢</title>
+<style>
+body{margin:0;background:#f7efe3;font-family:"Microsoft JhengHei","Noto Sans TC",Arial,sans-serif;color:#2a1a0a}
+.wrap{max-width:860px;margin:0 auto;padding:18px}
+.card{background:#fffaf0;border:2px solid #d8b98a;border-radius:16px;padding:16px;margin-bottom:14px}
+.title{font-size:26px;font-weight:900;color:#5e2808;margin-bottom:8px}
+.hint{font-size:14px;color:#735c3f;line-height:1.6}
+.row{display:grid;grid-template-columns:1fr 140px;gap:10px;margin-top:12px}
+input{width:100%;border-radius:10px;border:2px solid #d8b98a;padding:12px;font-size:18px;box-sizing:border-box}
+button{border:0;border-radius:10px;padding:12px 16px;background:#8a3f12;color:#fff;font-size:18px;font-weight:900;cursor:pointer}
+.msg{margin-top:12px;padding:10px;border-radius:10px;display:none;white-space:pre-wrap}
+.msg.ok{display:block;background:#e7f6ec;color:#155f2c}.msg.err{display:block;background:#fdebea;color:#8a1c16}
+table{width:100%;border-collapse:collapse;background:#fff}th,td{border:1px solid #e6d0aa;padding:8px;text-align:left;vertical-align:top}th{background:#fff0c8;color:#5e2808}
+@media(max-width:680px){.row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="title">流水號查詢</div>
+    <div class="hint">掃描小票上的 EAN13 條碼，或輸入 7 碼邏輯號（例如 0704002）/ 完整單號（例如 202607040002）</div>
+    <div class="row"><input id="q" placeholder="請輸入流水號" onkeydown="if(event.key==='Enter')query()"><button onclick="query()">查詢</button></div>
+    <div id="msg" class="msg"></div>
+  </div>
+  <div id="result"></div>
+</div>
+<script>
+var INITIAL_QUERY = <?!= JSON.stringify(initialQuery) ?>;
+function esc(s){return String(s==null?'':s).replace(/[&<>'"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c];});}
+function money(n){return (parseInt(n||0,10)||0)+' 元';}
+function label(s){return ({pending:'待完成',completed:'已完成',cancelled:'已取消'})[s]||s;}
+function show(t,x){var el=document.getElementById('msg');el.className='msg '+t;el.innerText=x;}
+function query(){
+  var v=document.getElementById('q').value.trim(); if(!v){show('err','請先輸入流水號。');return;}
+  show('ok','查詢中...');
+  google.script.run.withSuccessHandler(function(j){
+    if(!j.ok){show('err',j.message);document.getElementById('result').innerHTML='';return;}
+    var o=j.order;
+    show('ok','查詢成功：'+o.order_no);
+    var items=(o.items||[]).map(function(i){return '<div>'+esc(i.name)+' x '+i.qty+' = '+money(i.subtotal)+'</div>';}).join('');
+    document.getElementById('result').innerHTML='<div class="card"><table>'+
+      '<tr><th style="width:120px">單號</th><td><b>'+esc(o.order_no)+'</b><br>條碼：'+esc(o.barcode_no)+'</td></tr>'+
+      '<tr><th>狀態</th><td>'+label(o.status)+'</td></tr><tr><th>建立時間</th><td>'+esc(o.created_at)+'</td></tr>'+
+      '<tr><th>品項</th><td>'+(items||'—')+'</td></tr><tr><th>備註</th><td>'+(esc(o.note)||'—')+'</td></tr>'+
+      '<tr><th>總金額</th><td><b>'+money(o.total)+'</b></td></tr></table></div>';
+  }).withFailureHandler(function(e){show('err',String(e.message||e));}).apiLookup(v);
+}
+window.onload=function(){ if(INITIAL_QUERY){document.getElementById('q').value=INITIAL_QUERY;query();} };
+</script>
+</body>
+</html>
