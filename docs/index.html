@@ -155,6 +155,17 @@
       return;
     }
 
+    // 未結帳單據的本機暫存（外殼網域固定，GAS iframe 網域可能變動，所以多存一份在這裡）
+    if(d.method === 'draftSave' || d.method === 'draftLoad' || d.method === 'draftClear'){
+      try{
+        var KEY = 'mpos_draft_v1';
+        if(d.method === 'draftSave') localStorage.setItem(KEY, String((d.params && d.params.json) || ''));
+        if(d.method === 'draftClear') localStorage.removeItem(KEY);
+        reply(ev.source, ev.origin, d.id, true, d.method === 'draftLoad' ? {json: localStorage.getItem(KEY) || ''} : {saved: true});
+      }catch(e){ reply(ev.source, ev.origin, d.id, false, '本機暫存不可用：' + e.message); }
+      return;
+    }
+
     // 其他方法都要交給 Android App
     if(!window.AndroidPOS){
       reply(ev.source, ev.origin, d.id, false, '此功能需要在 MPOS Android App 內使用（目前是一般瀏覽器）。');

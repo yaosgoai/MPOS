@@ -42,7 +42,7 @@ test('查詢候選：EAN13 / 7 碼 / 12 碼 / Code39', () => {
 
 test('版型清洗：補齊 role、限制範圍、字重取最近值', () => {
   const rows = g.sanitizeReceiptLayout([{ role: 'total', font_pt: 99, weight: 650, align: 'bogus', show: 'on' }, { role: 'x' }]);
-  assert.equal(rows.length, 15);
+  assert.equal(rows.length, 16);
   const total = rows.find((r) => r.role === 'total');
   assert.equal(total.font_pt, 24);
   assert.equal(total.weight, 700);

@@ -193,4 +193,19 @@ input,select,textarea{font-size:16px} /* 16px 以上避免手機自動放大 */
 .scan-wrap-ta .scan-btn{align-self:flex-start;height:clamp(38px,5vw,46px)}
 .pin-modal .scan-wrap{display:block}
 @media (max-width:600px){ .field-grid > div:has(> .scan-wrap > input:not([type=number])), .field-grid-4 > div:has(> .scan-wrap > input:not([type=number])){grid-column:1/-1} }
+
+/* ---- 訂單來源 / 結帳按鈕 ---- */
+.source-bar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:8px 12px;margin-bottom:10px;border-radius:12px;background:#e8f0fa;border:2px solid var(--blue);font-size:var(--fs-md)}
+.source-bar b{font-size:var(--fs-lg);color:var(--blue)}
+.draft-state{margin-left:auto;font-size:var(--fs-xs);color:var(--muted)}
+.source-modal{width:min(560px,100%)}
+.source-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--gap);margin-top:6px}
+.source-btn{border:2px solid var(--border);background:#fff4dc;border-radius:var(--radius);padding:clamp(16px,3vw,26px) 8px;font-size:var(--fs-xl);font-weight:900;color:var(--main2);cursor:pointer}
+.source-btn.active{background:var(--blue);border-color:var(--blue);color:#fff}
+.src-badge{display:inline-block;border-radius:999px;padding:2px 10px;background:#e8f0fa;color:var(--blue);font-weight:900;font-size:var(--fs-xs);margin:2px 4px 2px 0}
+.source-sum{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:4px}
+.action-row-3{grid-template-columns:1.3fr 1fr .8fr}
+.quick-q{font-size:var(--fs-xl);font-weight:900;text-align:center;margin:10px 0;color:var(--main2)}
+.key-btn.span-all{grid-column:1/-1}
+@media (max-width:600px){.action-row-3{grid-template-columns:1fr 1fr}.action-row-3 #resetBtn{grid-column:1/-1}}
 </style>

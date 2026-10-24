@@ -73,10 +73,15 @@ test('GitHub Pages 外殼載入 GAS 並完成握手', { skip: !PAGES_URL && '未
     // 商品在「新增訂購」視窗內：先開視窗再檢查商品按鈕
     await frame.waitForSelector('#newOrderBtn', { timeout: 30000 });
     await frame.click('#newOrderBtn');
+    // 新增訂購先選訂單來源
+    await frame.waitForSelector('#sourceOverlay.show .source-btn', { timeout: 30000 });
+    await frame.click('#sourceArea .source-btn >> nth=0');
     await frame.waitForSelector('#orderOverlay.show .item-btn', { timeout: 30000 });
     const n = await frame.locator('.item-btn').count();
     assert.ok(n > 0, '新增訂購視窗沒有商品按鈕');
     await frame.click('#orderOverlay .checkout-close');
+    page.on('dialog', (d) => d.accept());
+    await frame.click('#resetBtn'); // 清掉測試用的本機暫存
     const chip = await frame.innerText('#bridgeChip');
     assert.match(chip, /網頁外殼/);
   } finally {

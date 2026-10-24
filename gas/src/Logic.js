@@ -186,6 +186,7 @@ function buildReceiptLines(order, settings) {
   add('separator', eq);
   add('order_no', '單號：' + order.order_no);
   add('time', '時間：' + (order.created_at || ''));
+  if (order.order_source) add('order_source', '來源：' + order.order_source);
   add('separator', dash);
 
   (order.items || []).forEach(function (it) {
@@ -321,7 +322,7 @@ function validateSettings(input) {
     clean.ean13_prefix = p;
   }
   if (clean.feed_lines_after !== undefined) clean.feed_lines_after = String(safeInt_(clean.feed_lines_after, 3, 0, 10));
-  ['always_print_barcode', 'open_cash_drawer', 'cut_paper'].forEach(function (k) {
+  ['always_print_barcode', 'open_cash_drawer', 'cut_paper', 'barcode_confirm'].forEach(function (k) {
     if (clean[k] !== undefined) clean[k] = truthy_(clean[k]) ? '1' : '0';
   });
   if (clean.shop_name !== undefined && !clean.shop_name) throw new Error('店名不可空白。');

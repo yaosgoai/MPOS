@@ -32,6 +32,13 @@ const FAKE_ANDROID = () => {
 };
 
 let h, browser;
+
+/** 新增訂購時先選訂單來源 */
+async function pickSource(frame, name) {
+  await frame.waitForSelector('#sourceOverlay.show');
+  await frame.click('#sourceArea .source-btn >> text=' + name);
+  await frame.waitForSelector('#orderOverlay.show');
+}
 test.before(async () => {
   h = await startHarness({ now: () => new Date('2026-07-04T02:00:00Z') });
   browser = await chromium.launch();
@@ -73,6 +80,7 @@ test('外殼載入 GAS、跨網域 postMessage 握手、選擇藍牙出單機、
   await frame.click('button[data-tab="pos"]');
   assert.equal(await frame.isVisible('#menuArea'), false, '主畫面不應直接顯示商品');
   await frame.click('#newOrderBtn');
+  await pickSource(frame, '來電點餐');
   await frame.waitForSelector('#orderOverlay.show');
   // 項目 1：卡士達 x2，此項備註「先做」
   await frame.click('.item-btn[data-id="custard"]');
@@ -114,6 +122,7 @@ test('外殼載入 GAS、跨網域 postMessage 握手、選擇藍牙出單機、
   assert.equal(texts[texts.indexOf('卡士達') + 1], '  ※先做');
   assert.equal(texts[texts.indexOf('茶凍') + 1], '  ※分開裝');
   assert.ok(texts.includes('王先生 18:30 取餐'));
+  assert.ok(texts.includes('來源：來電點餐'));
 
   // 後端已記錄列印時間
   const orders = JSON.parse(JSON.stringify(h.g.apiOrders('2026-07-04'))).orders;
@@ -135,6 +144,7 @@ test('一般瀏覽器（沒有 Android App）：可開單，列印失敗時提�
   const { ctx, frame, errors } = await openShell(false);
   await frame.waitForFunction(() => document.getElementById('bridgeChip').innerText.includes('網頁外殼'));
   await frame.click('#newOrderBtn');
+  await pickSource(frame, '現場點餐');
   await frame.click('.item-btn[data-id="cheese"]');
   await frame.click('#pickerDoneBtn');
   await frame.click('#checkoutBtn');
@@ -163,6 +173,7 @@ test('RWD：手機直式 / 橫式、平板直式 / 橫式不超出畫面', async
     const frame = page.frames().find((f) => f.url().startsWith(h.gasUrl));
     await frame.waitForFunction(() => window.__MPOS_READY__ === true);
     await frame.click('#newOrderBtn');
+    await pickSource(frame, '現場點餐');
     await frame.click('.item-btn[data-id="custard"]');
     const foot = await frame.evaluate(() => document.getElementById('pickerDoneBtn').getBoundingClientRect().bottom);
     assert.ok(foot <= hh, `${w}x${hh} 新增訂購按鈕超出畫面`);
@@ -226,12 +237,13 @@ test('條碼輸入：所有輸入欄位都有掃描按鈕，掃描結果帶回�
 
   // 新增訂購視窗內的此項備註
   await frame.click('#newOrderBtn');
+  await pickSource(frame, '現場點餐');
   await frame.click('#lineNoteInput + .scan-btn');
   await frame.waitForFunction(() => document.getElementById('lineNoteInput').value === 'ABC-123');
   await frame.click('#orderOverlay .checkout-close');
 
   // 今日訂單：掃描小票 EAN13 → 自動查詢
-  const o = JSON.parse(JSON.stringify(h.g.apiCreateOrder({ items: [{ id: 'cheese', qty: 1 }], print: false }))).order;
+  const o = JSON.parse(JSON.stringify(h.g.apiCreateOrder({ order_source: '現場點餐', items: [{ id: 'cheese', qty: 1 }], print: false }))).order;
   await frame.evaluate((code) => { window.__nextScan = { status: 'ok', text: code, format: 'ean_13', engine: 'mlkit' }; },
     h.g.barcodeNoToEan13(o.barcode_no));
   await frame.click('button[data-tab="orders"]');
@@ -276,5 +288,176 @@ test('條碼輸入：一般瀏覽器（沒有 App）改開 GitHub Pages 掃描�
   const popup = await popupP;
   assert.match(popup.url(), /\/barcode\/scan\.html\?id=[0-9a-f]{32}&origin=/);
   await popup.close();
+  await ctx.close();
+});
+
+async function openPos(withNative, extraInit) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  if (withNative) await ctx.addInitScript(FAKE_ANDROID);
+  if (extraInit) await ctx.addInitScript(extraInit);
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('dialog', (d) => d.accept());
+  await page.goto(h.shellUrl);
+  return { ctx, page, errors, frame: await waitPos(page) };
+}
+async function waitPos(page) {
+  await page.waitForFunction(() => window.MPOS_SHELL && window.MPOS_SHELL.gasReady, null, { timeout: 15000 });
+  const frame = page.frames().find((f) => f.url().startsWith(h.gasUrl));
+  await frame.waitForFunction(() => window.__MPOS_READY__ === true && Draft.ready === true);
+  return frame;
+}
+async function addLine(frame, id, qty) {
+  await frame.click('#newOrderBtn');
+  if (await frame.isVisible('#sourceOverlay.show')) await pickSource(frame, '現場點餐');
+  await frame.waitForSelector('#orderOverlay.show');
+  for (let i = 0; i < qty; i++) await frame.click('.item-btn[data-id="' + id + '"]');
+  await frame.click('#pickerDoneBtn');
+}
+async function setPrinter(page) {
+  await page.evaluate(() => { window.__printer = { name: 'CP-Q3', address: '00:11:22:33:44:55' }; });
+}
+const countOrders = () => JSON.parse(JSON.stringify(h.g.apiOrders(''))).orders.length;
+
+test('結帳（不找零）：確認是否列印 → 列印並結帳 / 不列印直接結帳', async () => {
+  const { ctx, page, frame, errors } = await openPos(true);
+  await setPrinter(page);
+  const before = countOrders();
+  await addLine(frame, 'cheese', 2);
+  await frame.click('#quickPayBtn');
+  await frame.waitForSelector('#quickPayOverlay.show');
+  assert.match(await frame.innerText('#quickPayTotal'), /90 元/);
+  assert.equal(await frame.innerText('#quickPaySource'), '現場點餐');
+  await frame.click('#quickPayPrintBtn');
+  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('列印成功'));
+  let calls = await page.evaluate(() => window.__nativeCalls.filter((c) => c.method === 'print'));
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].params.job.lines.some((l) => l.text === '來源：現場點餐'));
+
+  await addLine(frame, 'custard', 1);
+  await frame.click('#quickPayBtn');
+  await frame.click('#quickPayNoPrintBtn');
+  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('訂單已建立'));
+  calls = await page.evaluate(() => window.__nativeCalls.filter((c) => c.method === 'print'));
+  assert.equal(calls.length, 1, '不列印時不應送出列印');
+  assert.equal(countOrders(), before + 2);
+  const last = JSON.parse(JSON.stringify(h.g.apiOrders(''))).orders[0];
+  assert.equal(last.total, 45);
+  assert.equal(last.cash_received, 45);
+  assert.equal(last.change_amount, 0);
+  assert.equal(last.printed_at, '');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('重置：清空目前單據（含訂單來源與備註）', async () => {
+  const { ctx, frame } = await openPos(true);
+  await addLine(frame, 'cheese', 1);
+  await frame.fill('#orderNoteInput', '測試備註');
+  assert.equal(await frame.isVisible('#sourceBar'), true);
+  await frame.click('#resetBtn');
+  await frame.waitForFunction(() => document.querySelectorAll('#cartArea .cart-row').length === 0);
+  assert.equal(await frame.inputValue('#orderNoteInput'), '');
+  assert.equal(await frame.isVisible('#sourceBar'), false);
+  await frame.click('#newOrderBtn');
+  await frame.waitForSelector('#sourceOverlay.show'); // 重置後要重新選來源
+  await ctx.close();
+});
+
+test('本機暫存：重新整理後還原未結帳單據；結帳成功後清除', async () => {
+  const { ctx, page, frame } = await openPos(true);
+  await setPrinter(page);
+  const before = countOrders();
+  await addLine(frame, 'tea_jelly', 3);
+  await frame.fill('#orderNoteInput', '先暫存');
+  await frame.dispatchEvent('#orderNoteInput', 'input');
+  await page.waitForTimeout(400);
+  assert.equal(countOrders(), before, '點餐過程不應上傳');
+  const shellDraft = await page.evaluate(() => localStorage.getItem('mpos_draft_v1'));
+  assert.ok(shellDraft && shellDraft.includes('tea_jelly'), '外殼也要有一份暫存');
+
+  await page.reload();
+  let f2 = await waitPos(page);
+  assert.equal(await f2.locator('#cartArea .cart-row').count(), 1);
+  assert.match(await f2.innerText('#cartArea'), /茶凍/);
+  assert.equal(await f2.inputValue('#orderNoteInput'), '先暫存');
+  assert.equal(await f2.innerText('#sourceName'), '現場點餐');
+
+  await f2.click('#quickPayBtn');
+  await f2.click('#quickPayPrintBtn');
+  await f2.waitForFunction(() => document.getElementById('posMsg').innerText.includes('訂單已建立'));
+  assert.equal(countOrders(), before + 1);
+  await page.waitForTimeout(400);
+  assert.equal(await page.evaluate(() => localStorage.getItem('mpos_draft_v1')), null);
+  await page.reload();
+  f2 = await waitPos(page);
+  assert.equal(await f2.locator('#cartArea .cart-row').count(), 0);
+  await ctx.close();
+});
+
+test('上傳失敗保留暫存，重試不會重複建單', async () => {
+  const { ctx, page, frame } = await openPos(true);
+  await setPrinter(page);
+  const before = countOrders();
+  await addLine(frame, 'cheese', 1);
+  // 1) 網路中斷：伺服器沒收到
+  h.ctl.failNext.add('apiCreateOrder');
+  await frame.click('#quickPayBtn');
+  await frame.click('#quickPayNoPrintBtn');
+  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('仍暫存在本機'));
+  assert.equal(await frame.locator('#cartArea .cart-row').count(), 1);
+  assert.equal(countOrders(), before);
+  // 2) 伺服器已建單但回應遺失
+  h.ctl.dropResponse.add('apiCreateOrder');
+  await frame.click('#quickPayBtn');
+  await frame.click('#quickPayNoPrintBtn');
+  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('連線逾時'));
+  assert.equal(countOrders(), before + 1);
+  // 3) 重試：同一張單只會有一筆
+  await frame.click('#quickPayBtn');
+  await frame.click('#quickPayNoPrintBtn');
+  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('重送'));
+  assert.equal(countOrders(), before + 1);
+  assert.equal(await frame.locator('#cartArea .cart-row').count(), 0);
+  await ctx.close();
+});
+
+test('後台：訂單來源管理介面，新增後可在新增訂購選到', async () => {
+  const { ctx, frame } = await openPos(true);
+  await frame.click('button[data-tab="admin"]');
+  await frame.fill('#pinInput', '1234');
+  await frame.click('#pinOverlay .blue-btn');
+  await frame.click(".admin-subtab >> text=訂單來源");
+  await frame.waitForSelector('#admin-sources.active');
+  assert.match(await frame.innerText('#sourceAdminArea'), /現場點餐[\s\S]*來電點餐[\s\S]*Uber點餐[\s\S]*親友點餐/);
+  await frame.fill('#srcName', 'LINE點餐');
+  await frame.fill('#srcSort', '45');
+  await frame.click("text=儲存訂單來源");
+  await frame.waitForFunction(() => document.getElementById('sourceAdminArea').innerText.includes('LINE點餐'));
+  await frame.click('button[data-tab="pos"]');
+  await frame.click('#newOrderBtn');
+  await frame.waitForSelector('#sourceOverlay.show');
+  assert.deepEqual(await frame.$$eval('#sourceArea .source-btn', (b) => b.map((x) => x.innerText)),
+    ['現場點餐', '來電點餐', 'Uber點餐', '親友點餐', 'LINE點餐']);
+  await ctx.close();
+});
+
+test('設定：條碼輸入可選「直接帶回」（不開確認窗）', async () => {
+  const { ctx, frame } = await openPos(true, FAKE_SCANNER);
+  await frame.click('button[data-tab="settings"]');
+  await frame.fill('#pinInput', '1234');
+  await frame.click('#pinOverlay .blue-btn');
+  await frame.waitForSelector('#tab-settings.active');
+  await frame.selectOption('#sBarcodeConfirm', '0');
+  await frame.click('text=儲存設定');
+  await frame.waitForFunction(() => document.getElementById('settingsMsg').innerText.includes('設定已儲存'));
+  await frame.click('button[data-tab="pos"]');
+  await frame.click('#orderNoteInput + .scan-btn');
+  await frame.waitForFunction(() => document.getElementById('orderNoteInput').value === '2000007040014');
+  const reqs = await frame.evaluate(() => window.__scanRequests);
+  assert.equal(reqs[reqs.length - 1].confirm, false);
+  // 還原設定，避免影響其他測試
+  h.g.apiSaveSettings('1234', { barcode_confirm: '1' });
   await ctx.close();
 });

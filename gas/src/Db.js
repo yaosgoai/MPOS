@@ -217,6 +217,7 @@ function setup() {
   }
   if (readTable_('menu_items').length === 0) appendRows_('menu_items', seed.menu_items || DEFAULT_MENU_ITEMS);
   if (readTable_('note_presets').length === 0) appendRows_('note_presets', seed.note_presets || DEFAULT_NOTE_PRESETS);
+  if (readTable_('order_sources').length === 0) appendRows_('order_sources', DEFAULT_ORDER_SOURCES);
   if (readTable_('receipt_layout').length === 0) {
     var layout = sanitizeReceiptLayout(seed.receipt_layout || DEFAULT_RECEIPT_LAYOUT);
     var ts = nowText_();
@@ -235,7 +236,7 @@ function setup() {
 
 /* ---------------- 快取（減少讀表次數） ---------------- */
 
-var CACHE_KEY_STATIC = 'mpos_static_v1';
+var CACHE_KEY_STATIC = 'mpos_static_v2';
 
 function invalidateCache_() {
   try { CacheService.getScriptCache().remove(CACHE_KEY_STATIC); } catch (e) { /* ignore */ }
@@ -257,7 +258,14 @@ function getStatic_() {
   var notes = readTable_('note_presets').map(strip_);
   notes.sort(function (a, b) { return a.sort_order - b.sort_order || a.id - b.id; });
   var layout = sanitizeReceiptLayout(readTable_('receipt_layout').map(strip_));
-  var data = { settings: settings, menu: menu, notes: notes, layout: layout };
+  var sources = readTable_('order_sources').map(strip_);
+  if (!sources.length) {
+    // 舊版資料庫升級：第一次使用時自動建立預設訂單來源
+    appendRows_('order_sources', DEFAULT_ORDER_SOURCES);
+    sources = DEFAULT_ORDER_SOURCES.map(function (x) { return JSON.parse(JSON.stringify(x)); });
+  }
+  sources.sort(function (a, b) { return a.sort_order - b.sort_order || a.id - b.id; });
+  var data = { settings: settings, menu: menu, notes: notes, sources: sources, layout: layout };
   if (cache) {
     try { cache.put(CACHE_KEY_STATIC, JSON.stringify(data), 600); } catch (e) { /* ignore */ }
   }

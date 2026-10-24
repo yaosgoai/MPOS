@@ -53,6 +53,7 @@ function startHarness(opts) {
   const g = createGasContext({ now: opts.now });
   g.setup();
   const rpcLog = [];
+  const ctl = { failNext: new Set(), dropResponse: new Set() };
 
   const gasServer = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://x');
@@ -63,6 +64,20 @@ function startHarness(opts) {
         const { fn, args } = JSON.parse(body);
         rpcLog.push(fn);
         let out;
+        // 測試用：模擬網路中斷（不執行）或回應遺失（已執行但前端收不到）
+        if (ctl.failNext.has(fn)) {
+          ctl.failNext.delete(fn);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ __error: '網路中斷（模擬）' }));
+          return;
+        }
+        if (ctl.dropResponse.has(fn)) {
+          ctl.dropResponse.delete(fn);
+          try { g[fn].apply(null, args || []); } catch (e) { /* ignore */ }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ __error: '連線逾時（模擬，伺服器已處理）' }));
+          return;
+        }
         if (typeof g[fn] !== 'function' || fn.endsWith('_')) out = { __error: 'Script function not found: ' + fn };
         else {
           try { out = { result: JSON.parse(JSON.stringify(g[fn].apply(null, args || []))) }; } catch (e) { out = { __error: String(e.message || e) }; }
@@ -104,7 +119,7 @@ function startHarness(opts) {
       // shell 用 localhost，GAS 用 127.0.0.1 → 不同 origin，模擬跨網域 iframe
       shellServer.listen(opts.shellPort || 0, '127.0.0.1', () => {
         resolve({
-          g, rpcLog,
+          g, rpcLog, ctl,
           shellUrl: 'http://localhost:' + shellServer.address().port + '/',
           gasUrl: 'http://127.0.0.1:' + gasServer.address().port + '/gas',
           close: () => { gasServer.close(); shellServer.close(); },

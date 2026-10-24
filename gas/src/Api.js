@@ -44,6 +44,8 @@ function apiBootstrap() {
       all_menu: st.menu,
       notes: st.notes.filter(function (n) { return Number(n.active) === 1; }),
       all_notes: st.notes,
+      sources: st.sources.filter(function (n) { return Number(n.active) === 1; }),
+      all_sources: st.sources,
       settings: publicSettings_(st.settings),
       layout: st.layout,
       default_layout: DEFAULT_RECEIPT_LAYOUT,
@@ -94,6 +96,8 @@ function apiCreateOrder(payload) {
     var pay = computePayment(total, payload.cash_received);
     var shouldPrint = payload.print !== false;
     if (shouldPrint && !pay.has_payment) throw new Error('請先按「結帳」，輸入收款金額並計算找零後，才能列印單據。');
+    var source = normalizeOrderSource_(payload.order_source, st.sources);
+    var clientRef = String(payload.client_ref || '').replace(/[^A-Za-z0-9_\-]/g, '').substring(0, 64);
 
     var lock = LockService.getScriptLock();
     lock.waitLock(20000);
@@ -101,6 +105,16 @@ function apiCreateOrder(payload) {
     try {
       var orderDate = todayText_();
       var orders = readTable_('orders');
+      // 本機暫存訂單重送（例如網路逾時後重試）：同一個 client_ref 只建立一次
+      if (clientRef) {
+        var dup = orders.filter(function (o) { return o.client_ref === clientRef; })[0];
+        if (dup) {
+          var existing = getOrderWithItems_(dup);
+          var djob = buildPrintJob(existing, st.settings, st.layout);
+          existing.receipt = djob.preview;
+          return { order: existing, print_job: shouldPrint ? djob : null, duplicate: true, message: '訂單已建立（重送）' };
+        }
+      }
       var maxNo = 0, maxId = 0;
       orders.forEach(function (o) {
         if (Number(o.id) > maxId) maxId = Number(o.id);
@@ -123,6 +137,8 @@ function apiCreateOrder(payload) {
         cash_received: pay.cash_received,
         change_amount: pay.change_amount,
         payment_method: String(payload.payment_method || 'cash'),
+        order_source: source,
+        client_ref: clientRef,
       };
       appendRows_('orders', [order]);
       var itemId = nextId_('order_items');
@@ -142,6 +158,14 @@ function apiCreateOrder(payload) {
       message: '訂單已建立',
     };
   });
+}
+
+function normalizeOrderSource_(value, sources) {
+  var v = String(value || '').trim();
+  var active = (sources || []).filter(function (s) { return Number(s.active) === 1; });
+  if (!v) throw new Error('請先選擇訂單來源。');
+  if (!active.some(function (s) { return s.name === v; })) throw new Error('訂單來源不存在或已停用：' + v);
+  return v;
 }
 
 function apiMarkPrinted(orderId) {
@@ -177,18 +201,23 @@ function apiOrders(date, status) {
     var byOrder = {};
     itemsAll.forEach(function (i) { (byOrder[i.order_id] = byOrder[i.order_id] || []).push(strip_(i)); });
 
-    var summary = { order_date: d, by_status: { pending: { cnt: 0, amount: 0 }, completed: { cnt: 0, amount: 0 }, cancelled: { cnt: 0, amount: 0 } }, items: [] };
+    var summary = { order_date: d, by_status: { pending: { cnt: 0, amount: 0 }, completed: { cnt: 0, amount: 0 }, cancelled: { cnt: 0, amount: 0 } }, items: [], by_source: [] };
+    var srcAgg = {};
     var itemAgg = {};
     all.forEach(function (o) {
       var b = summary.by_status[o.status] || (summary.by_status[o.status] = { cnt: 0, amount: 0 });
       b.cnt += 1; b.amount += Number(o.total) || 0;
       if (o.status !== 'cancelled') {
+        var sk = o.order_source || '未指定';
+        var sa = srcAgg[sk] || (srcAgg[sk] = { name: sk, cnt: 0, amount: 0 });
+        sa.cnt += 1; sa.amount += Number(o.total) || 0;
         (byOrder[o.id] || []).forEach(function (i) {
           var a = itemAgg[i.name] || (itemAgg[i.name] = { name: i.name, qty: 0, amount: 0 });
           a.qty += Number(i.qty) || 0; a.amount += Number(i.subtotal) || 0;
         });
       }
     });
+    summary.by_source = Object.keys(srcAgg).map(function (k) { return srcAgg[k]; }).sort(function (a, b) { return b.amount - a.amount; });
     summary.items = Object.keys(itemAgg).map(function (k) { return itemAgg[k]; })
       .sort(function (a, b) { return b.qty - a.qty || b.amount - a.amount; });
 
@@ -246,6 +275,7 @@ function apiTestPrintJob(barcodeOnly) {
       created_at: nowText_(),
       items: [{ name: '原味（無餡料）', price: 35, qty: 1 }, { name: '卡士達', price: 45, qty: 1 }],
       note: '測試列印／條碼內容為月日+三碼流水號',
+      order_source: (st.sources[0] && st.sources[0].name) || '現場點餐',
       cash_received: 100, change_amount: 20, payment_method: 'cash',
     };
     var job = buildPrintJob(order, st.settings, st.layout);
@@ -371,6 +401,37 @@ function apiDisableNote(pin, id) {
     if (!updateFields_('note_presets', id, { active: 0 })) throw new Error('找不到備註。');
     invalidateCache_();
     return { notes: getStatic_().notes, message: '備註已停用' };
+  });
+}
+
+function apiSaveSource(pin, p) {
+  return wrap_(function () {
+    requirePin_(pin);
+    p = p || {};
+    var name = String(p.name || '').trim();
+    if (!name) throw new Error('訂單來源名稱不可空白。');
+    if (name.length > 20) throw new Error('訂單來源名稱最多 20 字。');
+    var id = parseInt(p.id, 10) || 0;
+    var dup = readTable_('order_sources').filter(function (s) { return s.name === name && Number(s.id) !== id; })[0];
+    if (dup) throw new Error('已有相同名稱的訂單來源。');
+    var src = {
+      id: id || nextId_('order_sources'),
+      name: name,
+      sort_order: parseInt(p.sort_order, 10) || 0,
+      active: truthy_(p.active === undefined ? '1' : p.active) ? 1 : 0,
+    };
+    upsert_('order_sources', src);
+    invalidateCache_();
+    return { sources: getStatic_().sources, message: '訂單來源已儲存' };
+  });
+}
+
+function apiDisableSource(pin, id) {
+  return wrap_(function () {
+    requirePin_(pin);
+    if (!updateFields_('order_sources', id, { active: 0 })) throw new Error('找不到訂單來源。');
+    invalidateCache_();
+    return { sources: getStatic_().sources, message: '訂單來源已停用' };
   });
 }
 

@@ -2,7 +2,7 @@
  * MPOS Cloud - 設定與預設資料
  * 茉莉花鯛魚燒 POS（GAS 管理後台版）
  */
-var APP_VERSION = 'cloud-1.1.0';
+var APP_VERSION = 'cloud-1.2.0';
 var TZ = 'Asia/Taipei';
 
 var DEFAULT_SHOP = {
@@ -35,6 +35,7 @@ var DEFAULT_SETTINGS = {
   open_cash_drawer: '0',            // 1 = 結帳列印後開錢箱（ESC p）
   cut_paper: '1',
   feed_lines_after: '3',
+  barcode_confirm: '1',             // 條碼輸入：1 = 開窗確認後帶回；0 = 掃到直接帶回
 };
 
 /** 允許前端修改的設定欄位 */
@@ -43,7 +44,7 @@ var EDITABLE_SETTING_KEYS = [
   'print_mode', 'paper_width_mm', 'encoding', 'print_darkness', 'line_spacing_percent',
   'print_margin_left_mm', 'print_margin_top_mm', 'print_start_x_mm', 'print_start_y_mm',
   'barcode_max_width_percent', 'always_print_barcode', 'ean13_prefix',
-  'open_cash_drawer', 'cut_paper', 'feed_lines_after',
+  'open_cash_drawer', 'cut_paper', 'feed_lines_after', 'barcode_confirm',
 ];
 
 var DEFAULT_MENU_ITEMS = [
@@ -67,12 +68,21 @@ var DEFAULT_NOTE_PRESETS = [
   { id: 7, text: '不要壓到', sort_order: 70, active: 1 },
 ];
 
+/** 訂單來源預設（後台「訂單來源」可增修） */
+var DEFAULT_ORDER_SOURCES = [
+  { id: 1, name: '現場點餐', sort_order: 10, active: 1 },
+  { id: 2, name: '來電點餐', sort_order: 20, active: 1 },
+  { id: 3, name: 'Uber點餐', sort_order: 30, active: 1 },
+  { id: 4, name: '親友點餐', sort_order: 40, active: 1 },
+];
+
 var DEFAULT_RECEIPT_LAYOUT = [
   { role: 'barcode', title: 'EAN13單號條碼', show: 1, font_pt: 10, weight: 400, align: 'left', x_offset: 0, space_before: 0, space_after: 4 },
   { role: 'shop_name', title: '店名', show: 1, font_pt: 12, weight: 900, align: 'left', x_offset: 0, space_before: 0, space_after: 2 },
   { role: 'separator', title: '分隔線', show: 1, font_pt: 7, weight: 400, align: 'left', x_offset: 0, space_before: 0, space_after: 0 },
   { role: 'order_no', title: '單號', show: 1, font_pt: 8, weight: 700, align: 'left', x_offset: 0, space_before: 0, space_after: 0 },
   { role: 'time', title: '時間', show: 1, font_pt: 8, weight: 400, align: 'left', x_offset: 0, space_before: 0, space_after: 1 },
+  { role: 'order_source', title: '訂單來源', show: 1, font_pt: 10, weight: 900, align: 'left', x_offset: 0, space_before: 0, space_after: 1 },
   { role: 'item_header', title: '品項標題', show: 1, font_pt: 8, weight: 700, align: 'left', x_offset: 0, space_before: 0, space_after: 0 },
   { role: 'item', title: '品項明細', show: 1, font_pt: 8, weight: 400, align: 'left', x_offset: 0, space_before: 0, space_after: 0 },
   { role: 'item_note', title: '品項備註', show: 1, font_pt: 8, weight: 700, align: 'left', x_offset: 0, space_before: 0, space_after: 0 },
@@ -93,11 +103,13 @@ var TABLES = {
   settings: { key: 'key', cols: [['key', 's'], ['value', 's']] },
   menu_items: { key: 'id', cols: [['id', 's'], ['category', 's'], ['name', 's'], ['price', 'n'], ['sort_order', 'n'], ['active', 'n']] },
   note_presets: { key: 'id', cols: [['id', 'n'], ['text', 's'], ['sort_order', 'n'], ['active', 'n']] },
+  order_sources: { key: 'id', cols: [['id', 'n'], ['name', 's'], ['sort_order', 'n'], ['active', 'n']] },
   orders: {
     key: 'id',
     cols: [['id', 'n'], ['order_date', 's'], ['daily_no', 'n'], ['order_no', 's'], ['barcode_no', 's'], ['status', 's'],
       ['total', 'n'], ['note', 's'], ['created_at', 's'], ['printed_at', 's'], ['completed_at', 's'], ['cancelled_at', 's'],
-      ['cash_received', 'n'], ['change_amount', 'n'], ['payment_method', 's']],
+      ['cash_received', 'n'], ['change_amount', 'n'], ['payment_method', 's'],
+      ['order_source', 's'], ['client_ref', 's']],
   },
   order_items: { key: 'id', cols: [['id', 'n'], ['order_id', 'n'], ['item_id', 's'], ['name', 's'], ['price', 'n'], ['qty', 'n'], ['subtotal', 'n'], ['note', 's']] },
   receipt_layout: {

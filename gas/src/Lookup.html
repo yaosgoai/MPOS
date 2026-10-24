@@ -55,7 +55,7 @@ function query(){
     var items=(o.items||[]).map(function(i){return '<div>'+esc(i.name)+' x '+i.qty+' = '+money(i.subtotal)+(i.note?'<br><span style="color:#b3261e;font-weight:900">※ '+esc(i.note)+'</span>':'')+'</div>';}).join('');
     document.getElementById('result').innerHTML='<div class="card"><table>'+
       '<tr><th style="width:120px">單號</th><td><b>'+esc(o.order_no)+'</b><br>條碼：'+esc(o.barcode_no)+'</td></tr>'+
-      '<tr><th>狀態</th><td>'+label(o.status)+'</td></tr><tr><th>建立時間</th><td>'+esc(o.created_at)+'</td></tr>'+
+      '<tr><th>訂單來源</th><td>'+(esc(o.order_source)||'—')+'</td></tr><tr><th>狀態</th><td>'+label(o.status)+'</td></tr><tr><th>建立時間</th><td>'+esc(o.created_at)+'</td></tr>'+
       '<tr><th>品項</th><td>'+(items||'—')+'</td></tr><tr><th>備註</th><td>'+(esc(o.note)||'—')+'</td></tr>'+
       '<tr><th>總金額</th><td><b>'+money(o.total)+'</b></td></tr></table></div>';
   }).withFailureHandler(function(e){show('err',String(e.message||e));}).apiLookup(v);

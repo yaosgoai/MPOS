@@ -36,21 +36,56 @@
         <h2 class="section-title" style="margin:0;border:0">目前訂單</h2>
         <button id="newOrderBtn" class="main-btn new-order-btn" onclick="openOrderPicker()">＋ 新增訂購</button>
       </div>
+      <div id="sourceBar" class="source-bar" style="display:none">
+        <span>訂單來源：</span><b id="sourceName"></b>
+        <button class="small-btn gray-btn" onclick="openSourcePicker(false)">變更</button>
+        <span id="draftState" class="draft-state">已暫存於本機</span>
+      </div>
       <div id="cartArea" class="cart-empty">尚未點選商品，請按「＋ 新增訂購」</div>
       <div class="total-box"><div class="total-label">總金額</div><div class="total-value" id="totalValue">0 元</div></div>
       <h2 class="section-title" style="margin-top:14px;">整張訂單備註</h2>
-      <textarea id="orderNoteInput" placeholder="整張訂單的備註，例如：王先生 18:30 取餐、電話預訂"></textarea>
-      <div class="action-row">
-        <button id="checkoutBtn" class="main-btn print-btn" onclick="openCheckout()">結帳</button>
-        <button class="main-btn blue-btn" onclick="createOrder(false)">只建立</button>
-        <button class="main-btn preview-btn" onclick="previewReceipt()">預覽</button>
-        <button class="main-btn clear-btn" onclick="clearCart(true)">清空</button>
+      <textarea id="orderNoteInput" placeholder="整張訂單的備註，例如：王先生 18:30 取餐" oninput="Draft.save()"></textarea>
+      <div class="action-row action-row-3">
+        <button id="checkoutBtn" class="main-btn print-btn" onclick="openCheckout()">找零結帳</button>
+        <button id="quickPayBtn" class="main-btn blue-btn" onclick="openQuickPay()">結帳</button>
+        <button id="resetBtn" class="main-btn clear-btn" onclick="resetDraft()">重置</button>
       </div>
+      <div class="hint">點餐內容先暫存在本機（重新整理或斷線都不會遺失），按結帳確認後才上傳。</div>
       <div id="posMsg" class="message"></div>
       <div id="receiptPreview" class="receipt-preview"></div>
     </section>
   </div>
 </section>
+
+<!-- ================= 訂單來源視窗（新增訂購時先選擇） ================= -->
+<div id="sourceOverlay" class="checkout-overlay">
+  <div class="checkout-modal source-modal">
+    <div class="checkout-head">
+      <div class="checkout-title">選擇訂單來源</div>
+      <button class="checkout-close" onclick="closeSourcePicker()">關閉</button>
+    </div>
+    <div id="sourceArea" class="source-grid"></div>
+  </div>
+</div>
+
+<!-- ================= 結帳（不找零）確認視窗 ================= -->
+<div id="quickPayOverlay" class="checkout-overlay">
+  <div class="checkout-modal source-modal">
+    <div class="checkout-head">
+      <div class="checkout-title">結帳</div>
+      <button class="checkout-close" onclick="closeQuickPay()">關閉</button>
+    </div>
+    <div class="checkout-screen">
+      <div class="checkout-row"><span>訂單來源</span><span id="quickPaySource"></span></div>
+      <div class="checkout-row big"><span>應收金額</span><span id="quickPayTotal">0 元</span></div>
+    </div>
+    <div class="quick-q">是否列印單據？</div>
+    <div class="checkout-actions">
+      <button id="quickPayNoPrintBtn" class="key-btn no-print" onclick="confirmQuickPay(false)">不列印，直接結帳</button>
+      <button id="quickPayPrintBtn" class="key-btn confirm" onclick="confirmQuickPay(true)">列印並結帳</button>
+    </div>
+  </div>
+</div>
 
 <!-- ================= 新增訂購項目視窗：商品 + 數量 + 此項的快速備註 ================= -->
 <div id="orderOverlay" class="order-overlay">
@@ -119,6 +154,7 @@
       <div class="admin-subtabs">
         <button class="admin-subtab active" onclick="switchAdminSection('products',this)">商品管理</button>
         <button class="admin-subtab" onclick="switchAdminSection('notes',this)">備註管理</button>
+        <button class="admin-subtab" onclick="switchAdminSection('sources',this)">訂單來源</button>
         <button class="admin-subtab" onclick="switchAdminSection('system',this)">系統資訊</button>
       </div>
 
@@ -142,6 +178,16 @@
         </div>
         <input id="nId" type="hidden"><input id="nActive" type="hidden" value="1">
         <div id="noteAdminArea" style="margin-top:12px;"></div>
+      </div>
+
+      <div id="admin-sources" class="admin-section">
+        <div class="field-grid">
+          <div><label>訂單來源名稱</label><input id="srcName" maxlength="20" placeholder="例如：LINE點餐"></div>
+          <div><label>排序</label><input id="srcSort" type="number" value="100"></div>
+          <div><label>&nbsp;</label><button class="main-btn blue-btn" onclick="saveSource()">儲存訂單來源</button></div>
+        </div>
+        <input id="srcId" type="hidden"><input id="srcActive" type="hidden" value="1">
+        <div id="sourceAdminArea" style="margin-top:12px;"></div>
       </div>
 
       <div id="admin-system" class="admin-section">
@@ -191,6 +237,7 @@
         <div><label>EAN13 內部前綴</label><input id="sEanPrefix" maxlength="5"></div>
         <div><label>條碼最大寬度 %</label>
           <select id="sBarcodeWidth"><option>70</option><option>80</option><option>85</option><option>88</option><option>90</option><option>92</option><option>95</option><option>100</option></select></div>
+        <div><label>條碼輸入</label><select id="sBarcodeConfirm"><option value="1">掃到後開窗確認再帶回</option><option value="0">掃到直接帶回</option></select></div>
         <div><label>單號同步條碼</label><select id="sAlwaysBarcode"><option value="1">開啟</option><option value="0">關閉</option></select></div>
         <div><label>結帳後開錢箱</label><select id="sOpenDrawer"><option value="0">關閉</option><option value="1">開啟</option></select></div>
         <div><label>自動切紙</label><select id="sCutPaper"><option value="1">開啟</option><option value="0">關閉</option></select></div>
@@ -228,7 +275,7 @@
 <div id="checkoutOverlay" class="checkout-overlay">
   <div class="checkout-modal">
     <div class="checkout-head">
-      <div class="checkout-title">現金結帳</div>
+      <div class="checkout-title">找零結帳</div>
       <button class="checkout-close" onclick="closeCheckout()">關閉</button>
     </div>
     <div class="checkout-body">
@@ -264,8 +311,7 @@
           <button class="key-btn calc span2" onclick="prepareCheckoutPayment()">計算找零</button>
         </div>
         <div class="checkout-actions">
-          <button id="checkoutNoPrintBtn" class="key-btn no-print" onclick="confirmCheckout(false)">結帳（不列印）</button>
-          <button id="checkoutConfirmBtn" class="key-btn confirm" onclick="confirmCheckout(true)">結帳並列印</button>
+          <button id="checkoutConfirmBtn" class="key-btn confirm span-all" onclick="confirmCheckout(true)">確認結帳並列印</button>
         </div>
       </div>
     </div>
@@ -297,6 +343,8 @@ var appData = {menu:[], all_menu:[], notes:[], all_notes:[], settings:{}, layout
 var cart = [];          // 訂購項目：[{key,id,name,price,qty,notes:[],custom:''}]
 var picker = null;      // 新增 / 修改中的項目
 var lineSeq = 0;
+var orderSource = '';   // 目前單據的訂單來源
+var draftRef = '';      // 本機暫存單據代碼（上傳時作為 client_ref，避免重送重複建單）
 var checkoutCash = '';
 var checkoutChangeAmount = 0;
 var adminPin = '';
@@ -454,7 +502,7 @@ function scanErrorText(code){
 async function scanInto(el){
   if(typeof BarcodeScan==='undefined'){ toast('條碼模組未載入'); return; }
   var r;
-  try{ r=await BarcodeScan.scanLive({confirm:true, scanPageUrl:scanPageUrl(), hint:'把條碼放進框內並對準十字'}); }
+  try{ r=await BarcodeScan.scanLive({confirm:String((appData.settings||{}).barcode_confirm)!=='0', scanPageUrl:scanPageUrl(), hint:'把條碼放進框內並對準十字'}); }
   catch(e){ r={status:'error', error:String((e && e.message) || e)}; }
   if(!r || r.status==='cancel') return;
   if(r.status!=='ok'){ toast(scanErrorText(r.error), 3000); return; }
@@ -488,13 +536,13 @@ async function bootstrap(){
   $('shopAddressHeader').innerText = j.shop.address || '';
   $('shopPhoneHeader').innerText = j.shop.phone || '';
   document.title = (j.shop.name||'') + ' POS';
-  renderMenu();renderNotes();renderCart();renderAdminMenu();renderAdminNotes();renderLayoutEditor();renderLayoutPreview();applySettingsToUi();updateBridgeChip();
+  renderMenu();renderNotes();renderCart();renderAdminMenu();renderAdminNotes();renderAdminSources();renderLayoutEditor();renderLayoutPreview();applySettingsToUi();updateBridgeChip();
 }
 
 window.addEventListener('load', async function(){
   attachScanButtons(document);
   detectBridge();
-  try{ await bootstrap(); }
+  try{ await bootstrap(); await Draft.restore(); }
   catch(e){ $('loadingMask').innerText='資料載入失敗：'+e.message+'\n請確認已執行 setup() 並重新整理。'; return; }
   $('loadingMask').style.display='none';
   window.__MPOS_READY__ = true;
@@ -559,6 +607,7 @@ function renderNotes(){
 
 /* 視窗 */
 function openOrderPicker(key){
+  if(!key && !orderSource){ openSourcePicker(true); return; }
   var line = key ? cart.filter(function(l){return l.key===key;})[0] : null;
   picker = line ? {key:line.key,id:line.id,qty:line.qty,notes:line.notes.slice(),custom:line.custom||''} : {key:null,id:null,qty:1,notes:[],custom:''};
   $('pickerTitle').innerText = line ? '修改訂購項目' : '新增訂購';
@@ -608,6 +657,9 @@ function deletePickerLine(){ if(picker&&picker.key){ cart=cart.filter(function(l
 /* 主畫面訂單清單 */
 function changeQty(key,d){ cart.forEach(function(l){ if(l.key===key) l.qty+=d; }); cart=cart.filter(function(l){return l.qty>0;}); renderCart(); }
 function renderCart(){
+  $('sourceBar').style.display = orderSource ? 'flex' : 'none';
+  $('sourceName').innerText = orderSource;
+  Draft.save();
   var items=cartItems(), area=$('cartArea');
   if(!items.length){ area.className='cart-empty'; area.innerHTML='尚未點選商品，請按「＋ 新增訂購」'; $('totalValue').innerText='0 元'; return; }
   var html='';
@@ -620,26 +672,111 @@ function renderCart(){
   });
   area.className=''; area.innerHTML=html; $('totalValue').innerText=money(total());
 }
-function clearCart(withMsg){ cart=[]; $('orderNoteInput').value=''; renderCart(); if(withMsg){ showMsg('posMsg','ok','訂單已清空。'); $('receiptPreview').style.display='none'; } }
+function newDraftRef(){ return 'D'+Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+function clearCart(withMsg){
+  cart=[]; orderSource=''; draftRef=newDraftRef(); $('orderNoteInput').value='';
+  Draft.clear(); renderCart();
+  if(withMsg){ showMsg('posMsg','ok','目前單據已重置。'); $('receiptPreview').style.display='none'; }
+}
+function resetDraft(){
+  if(!cartItems().length && !orderSource && !$('orderNoteInput').value.trim()){ clearCart(true); return; }
+  if(!confirm('確定要重置目前單據？已點的品項與備註都會清除。')) return;
+  clearCart(true);
+}
 function orderPayload(printFlag, pay){
-  var p={items:cartItems().map(function(l){return {id:l.id,qty:l.qty,note:lineNote(l)};}), note:$('orderNoteInput').value.trim(), print:printFlag};
+  var p={items:cartItems().map(function(l){return {id:l.id,qty:l.qty,note:lineNote(l)};}), note:$('orderNoteInput').value.trim(), print:printFlag,
+    order_source:orderSource, client_ref:draftRef};
   if(pay){p.cash_received=pay.received;p.change_amount=pay.change_amount;p.payment_method='cash';}
   return p;
 }
-async function previewReceipt(){
-  if(!cartItems().length){showMsg('posMsg','err','尚未點選商品，無法預覽。');return;}
-  try{ var j=await api('apiPreview', orderPayload(false)); showMsg('posMsg','ok','預覽完成\n總金額：'+money(j.total)); showReceipt('receiptPreview', j.receipt); }
-  catch(e){ showMsg('posMsg','err',e.message); }
+
+/* ---------- 訂單來源 ---------- */
+var sourceThenPick=false;
+function openSourcePicker(thenPick){
+  sourceThenPick=!!thenPick;
+  var html='';
+  (appData.sources||[]).forEach(function(src,i){
+    html+='<button class="source-btn '+(src.name===orderSource?'active':'')+'" data-i="'+i+'" onclick="selectSource(+this.dataset.i)">'+escapeHtml(src.name)+'</button>';
+  });
+  $('sourceArea').innerHTML = html || '<div class="cart-empty">尚未建立訂單來源，請到「後台管理 → 訂單來源」新增。</div>';
+  $('sourceOverlay').classList.add('show');
+}
+function closeSourcePicker(){ $('sourceOverlay').classList.remove('show'); }
+function selectSource(i){
+  var src=(appData.sources||[])[i]; if(!src) return;
+  orderSource=src.name; closeSourcePicker(); renderCart();
+  if(sourceThenPick) openOrderPicker();
+}
+
+/* ---------- 本機暫存（所有點餐輸入先存在本機，結帳成功後才清除） ----------
+ * 存兩份：GAS 頁面的 localStorage，以及外殼（GitHub Pages）localStorage（網域固定，較不會被清掉）
+ */
+var DRAFT_KEY='mpos_draft_v1';
+var Draft={
+  ready:false, timer:null,
+  data:function(){ return {v:1, ref:draftRef, source:orderSource, cart:cart, note:$('orderNoteInput').value, lineSeq:lineSeq, saved_at:Date.now()}; },
+  save:function(){
+    if(!this.ready) return;
+    var self=this; clearTimeout(this.timer);
+    this.timer=setTimeout(function(){
+      var d=self.data(), json=JSON.stringify(d), empty=!d.cart.length && !d.source && !d.note.trim();
+      try{ if(empty) localStorage.removeItem(DRAFT_KEY); else localStorage.setItem(DRAFT_KEY, json); }catch(e){}
+      if(Bridge.inShell()) Bridge.call(empty?'draftClear':'draftSave', empty?{}:{json:json}, 3000).catch(function(){});
+      $('draftState').innerText = empty ? '' : '已暫存於本機 '+new Date().toTimeString().slice(0,8);
+    }, 150);
+  },
+  clear:function(){
+    clearTimeout(this.timer);
+    try{ localStorage.removeItem(DRAFT_KEY); }catch(e){}
+    if(Bridge.inShell()) Bridge.call('draftClear', {}, 3000).catch(function(){});
+  },
+  load:async function(){
+    var cands=[];
+    try{ var l=localStorage.getItem(DRAFT_KEY); if(l) cands.push(JSON.parse(l)); }catch(e){}
+    if(Bridge.inShell()){ try{ var r=await Bridge.call('draftLoad', {}, 2500); if(r && r.json) cands.push(JSON.parse(r.json)); }catch(e){} }
+    cands=cands.filter(function(d){ return d && d.v===1; }).sort(function(a,b){ return (b.saved_at||0)-(a.saved_at||0); });
+    return cands[0] || null;
+  },
+  restore:async function(){
+    var d=await this.load(), dropped=[];
+    if(d){
+      draftRef=d.ref||newDraftRef(); lineSeq=d.lineSeq||0; $('orderNoteInput').value=d.note||'';
+      var srcOk=(appData.sources||[]).some(function(s){ return s.name===d.source; });
+      orderSource=srcOk ? d.source : '';
+      cart=(d.cart||[]).filter(function(l){
+        var m=menuItem(l.id); if(!m){ dropped.push(l.name); return false; }
+        l.name=m.name; l.price=m.price; return l.qty>0;   // 以最新價格為準
+      });
+      if(cart.length || orderSource) toast('已還原本機暫存的未結帳單據'+(dropped.length?'（已移除停用商品：'+dropped.join('、')+'）':''), 3000);
+    } else { draftRef=newDraftRef(); }
+    this.ready=true; renderCart();
+  }
+};
+
+/* ---------- 結帳（不找零）：確認是否列印後直接結帳 ---------- */
+function openQuickPay(){
+  if(!cartItems().length){ showMsg('posMsg','err','尚未點選商品，請先按「＋ 新增訂購」。'); return; }
+  if(!orderSource){ openSourcePicker(false); return; }
+  $('quickPayTotal').innerText=money(total());
+  $('quickPaySource').innerText=orderSource;
+  $('quickPayOverlay').classList.add('show');
+}
+function closeQuickPay(){ $('quickPayOverlay').classList.remove('show'); }
+function confirmQuickPay(printFlag){
+  closeQuickPay();
+  createOrder(printFlag, {received:total(), change_amount:0});
 }
 
 async function createOrder(printFlag, pay){
   if(busy) return;
   if(!cartItems().length){showMsg('posMsg','err','尚未點選商品。');return;}
+  if(!orderSource){showMsg('posMsg','err','請先選擇訂單來源。'); openSourcePicker(false); return;}
   busy=true;
+  Draft.save();
   showMsg('posMsg','ok', printFlag?'結帳列印中...':(pay?'結帳中...':'建立訂單中...'));
   try{
     var j=await api('apiCreateOrder', orderPayload(printFlag, pay));
-    var o=j.order, msg=j.message+'\n單號：'+o.order_no+'\n條碼：'+(o.barcode_no||'')+'\n總金額：'+money(o.total)+'\n狀態：待完成';
+    var o=j.order, msg=j.message+'\n來源：'+(o.order_source||'')+'\n單號：'+o.order_no+'\n條碼：'+(o.barcode_no||'')+'\n總金額：'+money(o.total)+'\n狀態：待完成';
     if(o.cash_received) msg+='\n收款：'+money(o.cash_received)+'\n找零：'+money(o.change_amount);
     var printErr='';
     if(j.print_job){
@@ -654,7 +791,7 @@ async function createOrder(printFlag, pay){
     clearCart(false);
     toast(printErr ? '訂單已建立，但列印失敗' : '訂單 '+o.order_no+' 已建立');
   }catch(e){
-    showMsg('posMsg','err',e.message);
+    showMsg('posMsg','err','上傳失敗：'+e.message+'\n\n單據仍暫存在本機，確認網路後可再按結帳重試（不會重複建單）。');
     $('checkoutMsg').innerText=e.message;
   }finally{ busy=false; }
 }
@@ -663,6 +800,7 @@ async function createOrder(printFlag, pay){
 function openCheckout(){
   $('orderOverlay').classList.remove('show');
   if(!cartItems().length){showMsg('posMsg','err','尚未點選商品，請先按「＋ 新增訂購」。');return;}
+  if(!orderSource){ openSourcePicker(false); return; }
   checkoutCash='';checkoutChangeAmount=0;$('checkoutMsg').innerText='';
   $('checkoutTotal').innerText=money(total());
   $('checkoutOverlay').classList.add('show'); updateCheckoutUi(false);
@@ -704,7 +842,8 @@ function renderSummary(s){
     '<div class="stat-card"><div class="stat-title">待完成</div><div class="stat-value">'+(p.cnt||0)+'</div><div>'+money(p.amount)+'</div></div>'+
     '<div class="stat-card"><div class="stat-title">已完成</div><div class="stat-value">'+(c.cnt||0)+'</div><div>'+money(c.amount)+'</div></div>'+
     '<div class="stat-card"><div class="stat-title">已取消</div><div class="stat-value">'+(x.cnt||0)+'</div><div>'+money(x.amount)+'</div></div>'+
-    '<div class="stat-card"><div class="stat-title">有效營收</div><div class="stat-value">'+money((p.amount||0)+(c.amount||0))+'</div><div>不含取消</div></div>';
+    '<div class="stat-card"><div class="stat-title">有效營收</div><div class="stat-value">'+money((p.amount||0)+(c.amount||0))+'</div><div>不含取消</div></div>'+
+    ((s.by_source||[]).length ? '<div class="source-sum">'+s.by_source.map(function(x){ return '<span class="src-badge">'+escapeHtml(x.name)+'：'+x.cnt+' 筆／'+money(x.amount)+'</span>'; }).join('')+'</div>' : '');
 }
 function renderOrders(orders){
   if(!orders.length){$('ordersArea').innerHTML='<div class="cart-empty">此條件無訂單</div>';return;}
@@ -717,7 +856,7 @@ function renderOrders(orders){
     var id=parseInt(o.id,10);
     var actions='<button class="small-btn blue-btn" onclick="reprintOrder('+id+')">補印</button>';
     if(o.status==='pending') actions='<button class="small-btn ok-btn" onclick="completeOrder('+id+')">完成</button><button class="small-btn danger-btn" onclick="cancelOrder('+id+')">取消</button>'+actions;
-    html+='<tr><td><b>'+escapeHtml(o.order_no)+'</b><br><span class="hint">條碼：'+escapeHtml(o.barcode_no)+'</span>'+(o.printed_at?'':'<br><span class="hint" style="color:#b3261e">未列印</span>')+'</td><td><span class="badge '+escapeHtml(o.status)+'">'+statusLabel(o.status)+'</span></td><td>'+items+'</td><td>'+escapeHtml(o.note)+'</td><td><b>'+money(o.total)+'</b>'+pay+'</td><td>'+escapeHtml(o.created_at)+(o.completed_at?'<br>完成：'+escapeHtml(o.completed_at):'')+(o.cancelled_at?'<br>取消：'+escapeHtml(o.cancelled_at):'')+'</td><td>'+actions+'</td></tr>';
+    html+='<tr><td>'+(o.order_source?'<span class="src-badge">'+escapeHtml(o.order_source)+'</span><br>':'')+'<b>'+escapeHtml(o.order_no)+'</b><br><span class="hint">條碼：'+escapeHtml(o.barcode_no)+'</span>'+(o.printed_at?'':'<br><span class="hint" style="color:#b3261e">未列印</span>')+'</td><td><span class="badge '+escapeHtml(o.status)+'">'+statusLabel(o.status)+'</span></td><td>'+items+'</td><td>'+escapeHtml(o.note)+'</td><td><b>'+money(o.total)+'</b>'+pay+'</td><td>'+escapeHtml(o.created_at)+(o.completed_at?'<br>完成：'+escapeHtml(o.completed_at):'')+(o.cancelled_at?'<br>取消：'+escapeHtml(o.cancelled_at):'')+'</td><td>'+actions+'</td></tr>';
   });
   $('ordersArea').innerHTML=html+'</tbody></table>';
 }
@@ -761,6 +900,17 @@ function renderAdminNotes(){
   (appData.all_notes||[]).forEach(function(n,i){ html+='<tr><td>'+escapeHtml(n.text)+'</td><td>'+n.sort_order+'</td><td>'+(Number(n.active)?'啟用':'停用')+'</td><td><button class="small-btn blue-btn" onclick="editNote('+i+')">編輯</button><button class="small-btn danger-btn" onclick="disableNote('+i+')">停用</button></td></tr>'; });
   $('noteAdminArea').innerHTML=html+'</tbody></table>';
 }
+function renderAdminSources(){
+  var html='<table><thead><tr><th>訂單來源</th><th>排序</th><th>狀態</th><th>動作</th></tr></thead><tbody>';
+  (appData.all_sources||[]).forEach(function(n,i){ html+='<tr><td>'+escapeHtml(n.name)+'</td><td>'+n.sort_order+'</td><td>'+(Number(n.active)?'啟用':'停用')+'</td><td><button class="small-btn blue-btn" onclick="editSource('+i+')">編輯</button>'+(Number(n.active)?'<button class="small-btn danger-btn" onclick="disableSource('+i+')">停用</button>':'')+'</td></tr>'; });
+  $('sourceAdminArea').innerHTML=html+'</tbody></table>';
+}
+function editSource(i){var n=appData.all_sources[i];$('srcId').value=n.id;$('srcName').value=n.name;$('srcSort').value=n.sort_order;$('srcActive').value='1';}
+async function saveSource(){
+  var p={id:$('srcId').value,name:$('srcName').value,sort_order:$('srcSort').value,active:$('srcActive').value};
+  try{ await api('apiSaveSource', await askPin(), p); $('srcId').value='';$('srcName').value='';$('srcSort').value='100'; await bootstrap(); toast('訂單來源已儲存'); }catch(e){ alert(e.message); }
+}
+async function disableSource(i){ if(!confirm('確認停用此訂單來源？歷史訂單仍會保留。'))return; try{ await api('apiDisableSource', await askPin(), appData.all_sources[i].id); await bootstrap(); }catch(e){ alert(e.message); } }
 function editNote(i){var n=appData.all_notes[i];$('nId').value=n.id;$('nText').value=n.text;$('nSort').value=n.sort_order;$('nActive').value='1';}
 async function saveNote(){
   var p={id:$('nId').value,text:$('nText').value,sort_order:$('nSort').value,active:$('nActive').value};
@@ -780,7 +930,7 @@ var SETTING_FIELDS = {
   print_mode:'sPrintMode', paper_width_mm:'sPaperWidth', encoding:'sEncoding', print_darkness:'sDarkness',
   line_spacing_percent:'sLineSpacing', ean13_prefix:'sEanPrefix', barcode_max_width_percent:'sBarcodeWidth',
   always_print_barcode:'sAlwaysBarcode', open_cash_drawer:'sOpenDrawer', cut_paper:'sCutPaper', feed_lines_after:'sFeedLines',
-  print_margin_left_mm:'sMarginLeft', print_margin_top_mm:'sMarginTop', print_start_x_mm:'sStartX', print_start_y_mm:'sStartY'
+  barcode_confirm:'sBarcodeConfirm', print_margin_left_mm:'sMarginLeft', print_margin_top_mm:'sMarginTop', print_start_x_mm:'sStartX', print_start_y_mm:'sStartY'
 };
 function applySettingsToUi(){
   var s=appData.settings||{};
