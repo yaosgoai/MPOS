@@ -299,3 +299,18 @@ test('電話正規化', () => {
   assert.equal(g.normalizePhone('123'), '');
   assert.equal(g.formatPhone('0912345678'), '0912-345-678');
 });
+
+test('來電記錄：指定日期逐筆列出、附名稱與訂單數', () => {
+  let now = new Date('2026-07-04T02:00:00Z');
+  const g = fresh(() => now);
+  g.apiRegisterCall('0912345678');
+  g.apiSaveCustomer('0912345678', '王先生');
+  plain(g.apiCreateOrder({ order_source: '來電點餐', customer_phone: '0912345678', items: [{ id: 'cheese', qty: 1 }], print: false }));
+  g.apiRegisterCall('0422223333');
+  g.apiRegisterCall('0912345678');
+  now = new Date('2026-07-05T02:00:00Z');
+  g.apiRegisterCall('0955000111');
+  const d4 = plain(g.apiCallLog('2026-07-04'));
+  assert.deepEqual(d4.calls.map((c) => [c.phone, c.name, c.order_count]), [['0912345678', '王先生', 1], ['0422223333', '', 0], ['0912345678', '王先生', 1]]);
+  assert.equal(plain(g.apiCallLog('2026/07/05')).calls.length, 1);
+});

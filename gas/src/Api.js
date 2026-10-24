@@ -273,6 +273,24 @@ function apiRecentCalls() {
   });
 }
 
+/** 來電記錄（指定日期，每通一筆，最新在前；附客戶名稱與累計訂單數） */
+function apiCallLog(date) {
+  return wrap_(function () {
+    var d = normalizeQueryDate_(date);
+    var custMap = {}, orderCnt = {};
+    readTable_('customers').forEach(function (c) { custMap[c.phone] = c; });
+    readTable_('orders').forEach(function (o) { if (o.customer_phone && o.status !== 'cancelled') orderCnt[o.customer_phone] = (orderCnt[o.customer_phone] || 0) + 1; });
+    var list = readTable_('calls').filter(function (c) { return String(c.called_at).indexOf(d) === 0; })
+      .sort(function (a, b) { return b.id - a.id; })
+      .map(function (c) {
+        var cu = custMap[c.phone] || {};
+        return { id: c.id, phone: c.phone, phone_display: formatPhone(c.phone), name: cu.name || '', called_at: c.called_at,
+          call_count: Number(cu.call_count) || 1, order_count: orderCnt[c.phone] || 0 };
+      });
+    return { date: d, calls: list };
+  });
+}
+
 /** 依電話查詢歷史交易品項 */
 function apiCustomerHistory(phoneInput) {
   return wrap_(function () {

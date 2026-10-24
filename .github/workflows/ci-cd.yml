@@ -23,6 +23,8 @@ concurrency:
 jobs:
   web-test:
     name: GAS / 外殼自動化測試
+    # 快速部署（commit 訊息含 [fast]）略過：本機已跑單元測試
+    if: ${{ !contains(github.event.head_commit.message, '[fast]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -43,6 +45,8 @@ jobs:
   pages:
     name: 部署 GitHub Pages
     needs: web-test
+    # 測試通過，或快速部署（測試被略過）時都要更新網頁
+    if: ${{ !cancelled() && needs.web-test.result != 'failure' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -61,6 +65,7 @@ jobs:
   live-smoke:
     name: 線上冒煙測試（GAS + Pages）
     needs: pages
+    if: ${{ !contains(github.event.head_commit.message, '[fast]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

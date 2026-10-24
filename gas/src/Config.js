@@ -2,7 +2,7 @@
  * MPOS Cloud - 設定與預設資料
  * 茉莉花鯛魚燒 POS（GAS 管理後台版）
  */
-var APP_VERSION = 'cloud-1.3.0';
+var APP_VERSION = 'cloud-1.4.0';
 var TZ = 'Asia/Taipei';
 
 var DEFAULT_SHOP = {

@@ -250,4 +250,14 @@ input,select,textarea{font-size:16px} /* 16px 以上避免手機自動放大 */
 }
 .item-modal .item-foot{position:sticky;bottom:calc(-1 * clamp(10px,2vw,16px));background:var(--panel);padding-bottom:6px;z-index:2}
 @media (max-height:500px){.item-modal .section-title{margin:4px 0;padding-bottom:2px}.item-modal textarea{min-height:40px}.picker-qty .qty-btn{width:40px;height:40px}}
+
+/* ---- v1.4：來電記錄分頁、今日訂單併入後台 ---- */
+.orders-wrap{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--gap)}
+.orders-side{border-top:2px solid var(--border);padding-top:10px}
+.call-log-row{display:grid;grid-template-columns:auto auto 1fr;gap:4px 12px;align-items:center;width:100%;text-align:left;padding:12px;margin-bottom:8px;border:2px solid #b9cfe8;border-radius:12px;background:#fff;cursor:pointer;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;font-size:var(--fs-md)}
+.call-log-row:active{background:#e8f0fa}
+.cl-time{font-weight:900;color:var(--muted)}
+.cl-phone{font-weight:900;color:var(--blue);font-size:var(--fs-lg)}
+.cl-name{font-weight:900;color:var(--main2)}
+.cl-meta{grid-column:1/-1;font-size:var(--fs-xs);color:var(--muted)}
 </style>

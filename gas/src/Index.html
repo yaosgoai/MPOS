@@ -23,7 +23,7 @@
 
 <nav class="tabs">
   <button class="tab-btn active" data-tab="pos" onclick="switchTab('pos')">POS 點餐</button>
-  <button class="tab-btn" data-tab="orders" onclick="switchTab('orders')">今日訂單</button>
+  <button class="tab-btn" data-tab="calls" onclick="switchTab('calls')">來電記錄</button>
   <button class="tab-btn" data-tab="admin" onclick="switchTab('admin')">後台管理</button>
   <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">設定</button>
 </nav>
@@ -69,7 +69,6 @@
         <button id="holdBtn" class="main-btn preview-btn" onclick="openQuickPay('hold')">掛單</button>
         <button id="resetBtn" class="main-btn clear-btn" onclick="resetDraft()">重置</button>
       </div>
-      <div class="hint">點餐內容先暫存在本機（重新整理或斷線都不會遺失），按結帳 / 掛單確認後才上傳。掛單＝未付款，之後可用「訂單條碼」叫回結帳。</div>
       <div id="posMsg" class="message"></div>
       <div id="receiptPreview" class="receipt-preview"></div>
     </section>
@@ -175,9 +174,39 @@
 
 
 <!-- ================= 今日訂單 ================= -->
-<section id="tab-orders" class="tab-page">
+<!-- ================= 來電記錄 ================= -->
+<section id="tab-calls" class="tab-page">
   <div class="admin-layout">
     <section class="panel">
+      <h2 class="section-title">來電記錄</h2>
+      <div class="field-grid" style="margin-bottom:12px;" data-noscan>
+        <div><label>日期</label><input type="date" id="callDate" onchange="loadCallLog()"></div>
+        <div><label>&nbsp;</label><button class="main-btn blue-btn" onclick="loadCallLog()">重新整理</button></div>
+        <div><label>&nbsp;</label><button class="main-btn gray-btn" onclick="manualCall()">＋ 手動記錄來電</button></div>
+      </div>
+      <div class="hint">長按記錄：新增來電點餐（自動帶入電話）、查詢歷史交易品項、補客戶名稱。</div>
+      <div id="callLogArea"></div>
+    </section>
+  </div>
+</section>
+
+
+<!-- ================= 後台管理 ================= -->
+<section id="tab-admin" class="tab-page">
+  <div class="admin-layout">
+    <section class="panel">
+      <h2 class="section-title">後台管理</h2>
+      <div class="admin-subtabs">
+        <button class="admin-subtab active" onclick="switchAdminSection('orders',this)">今日訂單</button>
+        <button class="admin-subtab" onclick="switchAdminSection('products',this)">商品管理</button>
+        <button class="admin-subtab" onclick="switchAdminSection('notes',this)">備註管理</button>
+        <button class="admin-subtab" onclick="switchAdminSection('sources',this)">訂單來源</button>
+        <button class="admin-subtab" onclick="switchAdminSection('system',this)">系統資訊</button>
+      </div>
+
+      <div id="admin-orders" class="admin-section active">
+        <div class="orders-wrap">
+          <div class="orders-main">
       <h2 class="section-title">今日訂單管理</h2>
       <div class="field-grid" style="margin-bottom:12px;">
         <div><label>日期</label><input type="date" id="adminDate" onchange="loadOrders()"></div>
@@ -191,27 +220,15 @@
       <div id="lookupMsg" class="message"></div>
       <div id="summaryArea" class="stats"></div>
       <div id="ordersArea"></div>
-    </section>
-    <section class="panel">
+    </div>
+          <div class="orders-side">
       <h2 class="section-title">今日品項統計</h2>
       <div id="salesArea"></div>
-    </section>
-  </div>
-</section>
-
-<!-- ================= 後台管理 ================= -->
-<section id="tab-admin" class="tab-page">
-  <div class="admin-layout">
-    <section class="panel">
-      <h2 class="section-title">後台管理</h2>
-      <div class="admin-subtabs">
-        <button class="admin-subtab active" onclick="switchAdminSection('products',this)">商品管理</button>
-        <button class="admin-subtab" onclick="switchAdminSection('notes',this)">備註管理</button>
-        <button class="admin-subtab" onclick="switchAdminSection('sources',this)">訂單來源</button>
-        <button class="admin-subtab" onclick="switchAdminSection('system',this)">系統資訊</button>
+          </div>
+        </div>
       </div>
 
-      <div id="admin-products" class="admin-section active">
+      <div id="admin-products" class="admin-section">
         <div class="field-grid-4">
           <div><label>分類</label><input id="mCategory" placeholder="鯛魚燒口味"></div>
           <div><label>品名</label><input id="mName" placeholder="新品項"></div>
@@ -631,7 +648,8 @@ async function switchTab(name){
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.tab===name); });
   document.querySelectorAll('.tab-page').forEach(function(p){ p.classList.remove('active'); });
   $('tab-'+name).classList.add('active');
-  if(name==='orders') loadOrders();
+  if(name==='admin' && $('admin-orders').classList.contains('active')) loadOrders();
+  if(name==='calls') loadCallLog();
   if(name==='settings') loadBtDevices();
 }
 function switchAdminSection(name, btn){
@@ -639,6 +657,7 @@ function switchAdminSection(name, btn){
   document.querySelectorAll('.admin-section').forEach(function(s){s.classList.remove('active');});
   if(btn) btn.classList.add('active');
   $('admin-'+name).classList.add('active');
+  if(name==='orders') loadOrders();
 }
 
 /* ---------- 點餐：每次「新增訂購」= 一個項目（商品 + 數量 + 此項備註） ---------- */
@@ -970,9 +989,28 @@ async function onIncomingCall(phone){
     var r=await api('apiRegisterCall', phone);
     var c=r.customer;
     await refreshCalls();
+    if($('tab-calls').classList.contains('active')) loadCallLog();
     callList.forEach(function(x){ x.fresh = x.phone===c.phone; }); renderCalls();
     toast('來電：'+(c.name ? c.name+' ' : (r.known?'舊客 ':'新客 '))+c.phone_display, 4000);
   }catch(e){ toast('來電記錄失敗：'+e.message, 3000); }
+}
+async function loadCallLog(){
+  var el=$('callLogArea');
+  if(!$('callDate').value) $('callDate').value=appData.today;
+  el.innerHTML='<div class="cart-empty">讀取中...</div>';
+  try{
+    var r=await api('apiCallLog', $('callDate').value);
+    var list=r.calls||[];
+    if(!list.length){ el.innerHTML='<div class="cart-empty">這一天沒有來電記錄</div>'; return; }
+    el.innerHTML=list.map(function(c,i){
+      return '<button class="call-log-row" data-i="'+i+'"><span class="cl-time">'+escapeHtml(String(c.called_at).slice(11,16))+'</span>'+
+        '<span class="cl-phone">'+escapeHtml(c.phone_display)+'</span><span class="cl-name">'+escapeHtml(c.name||'未命名')+'</span>'+
+        '<span class="cl-meta">來電 '+c.call_count+' 次・訂單 '+c.order_count+' 筆</span></button>';
+    }).join('');
+    el.querySelectorAll('.call-log-row').forEach(function(btn){
+      bindLongPress(btn, function(){ openCallMenu(list[+btn.dataset.i]); }, function(){ toast('長按記錄：新增來電點餐 / 查詢歷史'); });
+    });
+  }catch(e){ el.innerHTML='<div class="message err" style="display:block">'+escapeHtml(e.message)+'</div>'; }
 }
 function manualCall(){
   var p=prompt('輸入來電電話（手動記錄來電）');

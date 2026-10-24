@@ -33,6 +33,19 @@ const FAKE_ANDROID = () => {
 
 let h, browser;
 
+/** 後台管理 → 今日訂單（需要管理密碼時自動輸入） */
+async function goAdminOrders(frame) {
+  await frame.click('button[data-tab="admin"]');
+  await frame.waitForFunction(() => document.getElementById('pinOverlay').classList.contains('show') || document.getElementById('tab-admin').classList.contains('active'));
+  if (await frame.isVisible('#pinOverlay.show')) {
+    await frame.fill('#pinInput', '1234');
+    await frame.click('#pinOverlay .blue-btn');
+  }
+  await frame.waitForSelector('#tab-admin.active');
+  await frame.click('.admin-subtab >> text=今日訂單');
+  await frame.waitForSelector('#admin-orders.active');
+}
+
 /** 新增訂購時先選訂單來源 */
 async function pickSource(frame, name) {
   await frame.waitForSelector('#sourceOverlay.show');
@@ -136,7 +149,7 @@ test('外殼載入 GAS、跨網域 postMessage 握手、選擇藍牙出單機、
   assert.ok(orders[0].printed_at);
 
   // 今日訂單 → 完成
-  await frame.click('button[data-tab="orders"]');
+  await goAdminOrders(frame);
   await frame.waitForSelector('#ordersArea .ok-btn');
   frame.page().once('dialog', (d) => d.accept());
   await frame.click('#ordersArea .ok-btn');
@@ -254,15 +267,13 @@ test('條碼輸入：所有輸入欄位都有掃描按鈕，掃描結果帶回�
   const o = JSON.parse(JSON.stringify(h.g.apiCreateOrder({ order_source: '現場點餐', items: [{ id: 'cheese', qty: 1 }], print: false }))).order;
   await frame.evaluate((code) => { window.__nextScan = { status: 'ok', text: code, format: 'ean_13', engine: 'mlkit' }; },
     h.g.barcodeNoToEan13(o.barcode_no));
-  await frame.click('button[data-tab="orders"]');
+  await goAdminOrders(frame);
   await frame.click('#lookupInput + .scan-btn');
   await frame.waitForFunction((no) => document.getElementById('lookupMsg').innerText.includes('查詢成功：' + no), o.order_no);
 
   // 數字欄位：非數字內容不帶入
-  await frame.click('button[data-tab="admin"]');
-  await frame.fill('#pinInput', '1234');
-  await frame.click('#pinOverlay .blue-btn');
-  await frame.waitForSelector('#tab-admin.active');
+  await frame.click('.admin-subtab >> text=商品管理');
+  await frame.waitForSelector('#admin-products.active');
   await frame.evaluate(() => { window.__nextScan = { status: 'ok', text: 'XYZ', format: 'code_128', engine: 'mlkit' }; });
   await frame.click('#mPrice + .scan-btn');
   await frame.waitForFunction(() => document.getElementById('toast').innerText.includes('不是數字'));
@@ -558,6 +569,43 @@ test('來電：清單顯示、長按新增來電點餐（記錄電話 / 名稱�
   await frame.waitForFunction(() => document.querySelectorAll('#cartArea .cart-row').length === 1);
   assert.match(await frame.innerText('#cartArea'), /起司/);
   assert.equal(await frame.inputValue('#customerNameInput'), '陳小姐');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('版面：主畫面不顯示說明文字；分頁為 POS 點餐 / 來電記錄 / 後台管理 / 設定，今日訂單在後台管理內', async () => {
+  const { ctx, frame } = await openPos(true);
+  assert.equal(await frame.locator('#tab-pos .hint', { hasText: '暫存在本機' }).count(), 0);
+  assert.deepEqual(await frame.$$eval('.tabs .tab-btn', (b) => b.map((x) => x.innerText.trim())), ['POS 點餐', '來電記錄', '後台管理', '設定']);
+  await goAdminOrders(frame);
+  assert.equal((await frame.$$eval('.admin-subtab', (b) => b.map((x) => x.innerText.trim())))[0], '今日訂單');
+  await ctx.close();
+});
+
+test('來電記錄分頁：列出來電，長按記錄新增來電點餐並帶入電話', async () => {
+  h.g.apiRegisterCall('0988777666');
+  h.g.apiSaveCustomer('0988777666', '林先生');
+  const { ctx, page, frame, errors } = await openPos(true);
+  await frame.click('button[data-tab="calls"]');
+  await frame.waitForSelector('#tab-calls.active');
+  const row = frame.locator('#callLogArea .call-log-row', { hasText: '0988-777-666' }).first();
+  await row.waitFor();
+  assert.match(await row.innerText(), /林先生/);
+  await row.click({ button: 'right' }); // 長按（觸控長按 / 滑鼠右鍵）
+  await frame.waitForSelector('#callOverlay.show');
+  await frame.click('#callNewOrderBtn');
+  await frame.waitForSelector('#orderOverlay.show');
+  assert.equal(await frame.isVisible('#tab-pos.active'), true);
+  assert.equal(await frame.innerText('#sourceName'), '來電點餐');
+  assert.equal(await frame.innerText('#customerPhoneText'), '0988-777-666');
+  assert.equal(await frame.inputValue('#customerNameInput'), '林先生');
+
+  // 有新來電時，來電記錄頁會自動更新
+  await frame.click('#orderOverlay .checkout-close');
+  await frame.click('button[data-tab="calls"]');
+  const before = await frame.locator('#callLogArea .call-log-row').count();
+  await page.evaluate(() => window.MPOSNative.onEvent('incoming_call', JSON.stringify({ phone: '0911222333' })));
+  await frame.waitForFunction((n) => document.querySelectorAll('#callLogArea .call-log-row').length === n + 1, before);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

@@ -8,8 +8,9 @@
     6. 下載 APK 到 dist\（有接 Android 裝置時可直接安裝）
 
   模式（-Mode）：
-    Fast  快速部署驗證：本機單元測試 → GAS → Pages → 線上冒煙測試（約 3~5 分鐘，不重編 APK）
-          適用：只改 GAS 畫面 / 後台、網頁外殼；commit 訊息會加上 [fast]，GitHub Actions 略過 APK 與模擬器
+    Fast  快速部署驗證：本機單元測試 → GAS 部署 → GAS 線上健康檢查 → 推送 GitHub（不等待）（約 1~2 分鐘）
+          GitHub Actions 只在背景更新網頁（docs 有變更時），略過自動化測試、線上冒煙測試、APK、模擬器
+          適用：只改 GAS 畫面 / 後台、網頁外殼
     Full  完整部署驗證：本機單元 + 端對端測試 → GAS → Pages → 線上測試 → APK → 模擬器測試 → Release → 安裝
           適用：有改 Android App 或條碼模組 Android 部分（約 15~25 分鐘）
 
@@ -136,7 +137,9 @@ window.MPOS_CONFIG = {
   "deployedAt": "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 };
 "@
-Write-Utf8File (Join-Path $Root 'docs\config.js') $config
+$configPath = Join-Path $Root 'docs\config.js'
+$oldConfig = if (Test-Path $configPath) { [IO.File]::ReadAllText($configPath) } else { '' }
+if (-not $fast -or $oldConfig -notmatch [regex]::Escape($gasUrl)) { Write-Utf8File $configPath $config }
 # GitHub Actions 工作流程（原始檔在 ci\，部署時同步到 .github\workflows\）
 $wfDir = Join-Path $Root '.github\workflows'
 New-Item -ItemType Directory -Force -Path $wfDir | Out-Null
@@ -146,12 +149,25 @@ if ($fast) { $Message = $Message + ' [fast]' }
 $changes = Get-NativeOutput 'git' @('status', '--porcelain') 'git status'
 if ($changes.Trim()) {
     Invoke-Native 'git' @('commit', '-m', $Message) 'git commit'
+    Invoke-Native 'git' @('push', '-u', 'origin', 'main') 'git push'
+} elseif ($fast) {
+    Write-Info '沒有需要推送到 GitHub 的變更（只更新了 GAS）'
 } else {
     Invoke-Native 'git' @('commit', '--allow-empty', '-m', $Message) 'git commit'
+    Invoke-Native 'git' @('push', '-u', 'origin', 'main') 'git push'
 }
-Invoke-Native 'git' @('push', '-u', 'origin', 'main') 'git push'
 $sha = (Get-NativeOutput 'git' @('rev-parse', 'HEAD') 'git rev-parse').Trim()
 Write-Ok "已推送 $($sha.Substring(0,7)) 到 $($cfg.repo)"
+
+if ($fast) {
+    Write-Step '快速部署驗證完成'
+    Write-Info "GAS 後台網址    ：$gasUrl"
+    Write-Info "外殼網址（Pages）：$($cfg.pagesUrl)"
+    if ($changes.Trim()) { Write-Info '網頁外殼若有變更，GitHub 會在背景更新（約 1~2 分鐘），不需等待' }
+    Write-Info '平板上的 App 不用重裝：重新開啟 App（或按左下角 ⟳）即可看到新版畫面'
+    Write-Info '（自動化測試 / 線上冒煙測試 / APK 只在「完整部署驗證」執行）'
+    exit 0
+}
 
 if ($NoWait) {
     Write-Info "GitHub Actions 執行中：https://github.com/$($cfg.repo)/actions"
