@@ -628,8 +628,12 @@ test('v1.5 版面：標題不顯示版本 / 藍牙（移到設定）、來電列
   await frame.click('#newOrderBtn');
   await pickSource(frame, '來電點餐');
   await frame.click('#orderOverlay .checkout-close');
-  assert.equal(await frame.locator('.pos-head #sourceBar').count(), 1, '訂單來源應在「目前訂單」標題列');
-  assert.match(await frame.innerText('.pos-head'), /目前訂單[\s\S]*來電點餐/);
+  assert.equal(await frame.locator('.pos-head #sourceBar').count(), 1, '訂單來源應在「訂單」標題列');
+  assert.equal((await frame.innerText('.pos-title')).trim(), '訂單');
+  const yNote = await frame.evaluate(() => document.getElementById('orderNoteInput').getBoundingClientRect().bottom);
+  const yTotal = await frame.evaluate(() => document.querySelector('#tab-pos .total-box').getBoundingClientRect().top);
+  assert.ok(yNote <= yTotal, '整張訂單備註要在總金額上方');
+  assert.match(await frame.innerText('.pos-head'), /^訂單[\s\S]*來電點餐/);
   await frame.click('#sourceBar');
   await frame.waitForSelector('#sourceOverlay.show');
   assert.deepEqual(errors, []);
