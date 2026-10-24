@@ -87,64 +87,106 @@ function apiPreview(payload) {
  * 建立訂單。payload: {items:[{id,qty}], note, print, cash_received, change_amount, payment_method}
  * 若 print=true 會回傳 print_job，由前端轉給 Android App 藍牙列印，成功後再呼叫 apiMarkPrinted。
  */
+/**
+ * 建立 / 更新訂單（結帳、掛單共用）
+ * payload: {
+ *   items:[{id,qty,note}], note, order_source, client_ref,
+ *   print, cash_received, change_amount, payment_method,
+ *   hold: true = 掛單（未付款，可之後用單號 / 條碼叫回結帳）
+ *   order_id: 叫回的未付款訂單 id（更新該單，不另開新單號）
+ *   customer_phone, customer_name: 來電客戶（名稱可空白，之後再補）
+ * }
+ * 若 print=true 會回傳 print_job，由前端轉給 Android App 藍牙列印，成功後再呼叫 apiMarkPrinted。
+ */
 function apiCreateOrder(payload) {
   return wrap_(function () {
     payload = payload || {};
     var st = getStatic_();
     var items = normalizeCartItems_(payload.items, st.menu);
     var total = items.reduce(function (s, i) { return s + i.subtotal; }, 0);
-    var pay = computePayment(total, payload.cash_received);
+    var hold = payload.hold === true || payload.hold === 'true';
+    var pay = hold ? { cash_received: 0, change_amount: 0, has_payment: false } : computePayment(total, payload.cash_received);
     var shouldPrint = payload.print !== false;
-    if (shouldPrint && !pay.has_payment) throw new Error('請先按「結帳」，輸入收款金額並計算找零後，才能列印單據。');
+    if (!hold && shouldPrint && !pay.has_payment) throw new Error('請先按「結帳」，輸入收款金額並計算找零後，才能列印單據。');
     var source = normalizeOrderSource_(payload.order_source, st.sources);
     var clientRef = String(payload.client_ref || '').replace(/[^A-Za-z0-9_\-]/g, '').substring(0, 64);
+    var phone = normalizePhone(payload.customer_phone);
+    var cname = String(payload.customer_name || '').replace(/[\r\n]+/g, ' ').trim().substring(0, 30);
+    var targetPay = hold ? 'unpaid' : 'paid';
+    var editId = parseInt(payload.order_id, 10) || 0;
 
     var lock = LockService.getScriptLock();
     lock.waitLock(20000);
-    var order;
+    var order, isUpdate = false;
     try {
       var orderDate = todayText_();
       var orders = readTable_('orders');
-      // 本機暫存訂單重送（例如網路逾時後重試）：同一個 client_ref 只建立一次
+      // 本機暫存訂單重送（例如網路逾時後重試）：同一個 client_ref 只處理一次
       if (clientRef) {
         var dup = orders.filter(function (o) { return o.client_ref === clientRef; })[0];
-        if (dup) {
+        if (dup && (!editId || Number(dup.id) === editId) && (dup.pay_status || 'paid') === targetPay) {
           var existing = getOrderWithItems_(dup);
           var djob = buildPrintJob(existing, st.settings, st.layout);
           existing.receipt = djob.preview;
-          return { order: existing, print_job: shouldPrint ? djob : null, duplicate: true, message: '訂單已建立（重送）' };
+          return { order: existing, print_job: shouldPrint ? djob : null, duplicate: true, message: (hold ? '已掛單' : '訂單已建立') + '（重送）' };
         }
       }
-      var maxNo = 0, maxId = 0;
-      orders.forEach(function (o) {
-        if (Number(o.id) > maxId) maxId = Number(o.id);
-        if (o.order_date === orderDate && Number(o.daily_no) > maxNo) maxNo = Number(o.daily_no);
-      });
-      var dailyNo = maxNo + 1;
-      order = {
-        id: maxId + 1,
-        order_date: orderDate,
-        daily_no: dailyNo,
-        order_no: makeOrderNo(orderDate, dailyNo),
-        barcode_no: makeBarcodeNo(orderDate, dailyNo),
+      var now = nowText_();
+      var fields = {
         status: 'pending',
         total: total,
         note: String(payload.note || '').trim(),
-        created_at: nowText_(),
-        printed_at: '',
-        completed_at: '',
-        cancelled_at: '',
         cash_received: pay.cash_received,
         change_amount: pay.change_amount,
-        payment_method: String(payload.payment_method || 'cash'),
+        payment_method: hold ? '' : String(payload.payment_method || 'cash'),
         order_source: source,
         client_ref: clientRef,
+        pay_status: targetPay,
+        paid_at: hold ? '' : now,
+        customer_name: cname,
+        customer_phone: phone,
       };
-      appendRows_('orders', [order]);
+
+      if (editId) {
+        // 叫回未付款訂單：更新內容 / 結帳，單號不變
+        var cur = orders.filter(function (o) { return Number(o.id) === editId; })[0];
+        if (!cur) throw new Error('找不到要結帳的訂單。');
+        if (cur.status === 'cancelled') throw new Error('此訂單已取消，不能結帳。');
+        if ((cur.pay_status || 'paid') !== 'unpaid') throw new Error('此訂單已結帳（' + cur.order_no + '），不能重複結帳。');
+        if (!cname) fields.customer_name = cur.customer_name || '';
+        if (!phone) fields.customer_phone = cur.customer_phone || '';
+        delete fields.status;
+        updateFields_('orders', editId, fields);
+        deleteWhere_('order_items', function (r) { return Number(r.order_id) === editId; });
+        order = strip_(cur);
+        Object.keys(fields).forEach(function (k) { order[k] = fields[k]; });
+        isUpdate = true;
+      } else {
+        var maxNo = 0, maxId = 0;
+        orders.forEach(function (o) {
+          if (Number(o.id) > maxId) maxId = Number(o.id);
+          if (o.order_date === orderDate && Number(o.daily_no) > maxNo) maxNo = Number(o.daily_no);
+        });
+        var dailyNo = maxNo + 1;
+        order = {
+          id: maxId + 1,
+          order_date: orderDate,
+          daily_no: dailyNo,
+          order_no: makeOrderNo(orderDate, dailyNo),
+          barcode_no: makeBarcodeNo(orderDate, dailyNo),
+          created_at: now,
+          printed_at: '',
+          completed_at: '',
+          cancelled_at: '',
+        };
+        Object.keys(fields).forEach(function (k) { order[k] = fields[k]; });
+        appendRows_('orders', [order]);
+      }
       var itemId = nextId_('order_items');
       appendRows_('order_items', items.map(function (it, i) {
         return { id: itemId + i, order_id: order.id, item_id: it.id, name: it.name, price: it.price, qty: it.qty, subtotal: it.subtotal, note: it.note || '' };
       }));
+      if (order.customer_phone) touchCustomer_(order.customer_phone, cname, { last_order_at: now });
       SpreadsheetApp.flush();
     } finally {
       lock.releaseLock();
@@ -155,8 +197,122 @@ function apiCreateOrder(payload) {
     return {
       order: order,
       print_job: shouldPrint ? job : null,
-      message: '訂單已建立',
+      updated: isUpdate,
+      message: hold ? '已掛單（未付款）' : (isUpdate ? '訂單已結帳' : '訂單已建立'),
     };
+  });
+}
+
+/** 用單號 / 條碼叫回訂單：未付款可帶回 POS 結帳，已付款只能檢視 / 補印 */
+function apiLoadOrder(input) {
+  return wrap_(function () {
+    var r = apiLookup(input);
+    if (!r.ok) throw new Error(r.message);
+    var o = r.order;
+    var editable = o.status !== 'cancelled' && (o.pay_status || 'paid') === 'unpaid';
+    return { order: o, editable: editable };
+  });
+}
+
+/* ---------------- 來電 / 客戶 ---------------- */
+
+function findCustomer_(phone) {
+  return readTable_('customers').filter(function (c) { return c.phone === phone; })[0] || null;
+}
+
+/** 新增 / 更新客戶（name 空白時不覆蓋原名稱） */
+function touchCustomer_(phone, name, extra) {
+  var c = findCustomer_(phone);
+  var rec = c ? strip_(c) : { phone: phone, name: '', call_count: 0, last_call_at: '', last_order_at: '', created_at: nowText_() };
+  if (name) rec.name = name;
+  Object.keys(extra || {}).forEach(function (k) { rec[k] = extra[k]; });
+  upsert_('customers', rec);
+  return rec;
+}
+
+/** App 偵測到來電時呼叫：記錄來電並回傳客戶名稱 */
+function apiRegisterCall(phoneInput) {
+  return wrap_(function () {
+    var phone = normalizePhone(phoneInput);
+    if (!phone) throw new Error('來電號碼格式錯誤：' + phoneInput);
+    var lock = LockService.getScriptLock();
+    lock.waitLock(10000);
+    var cust;
+    try {
+      var now = nowText_();
+      var old = findCustomer_(phone);
+      cust = touchCustomer_(phone, '', { call_count: (old ? Number(old.call_count) || 0 : 0) + 1, last_call_at: now });
+      appendRows_('calls', [{ id: nextId_('calls'), phone: phone, called_at: now }]);
+    } finally { lock.releaseLock(); }
+    return { customer: decorateCustomer_(cust), known: !!(cust.name || Number(cust.call_count) > 1 || cust.last_order_at) };
+  });
+}
+
+function decorateCustomer_(c) {
+  var o = strip_(c);
+  o.phone_display = formatPhone(o.phone);
+  return o;
+}
+
+/** 今日來電清單（同號碼合併，最新在前） */
+function apiRecentCalls() {
+  return wrap_(function () {
+    var today = todayText_();
+    var custMap = {};
+    readTable_('customers').forEach(function (c) { custMap[c.phone] = c; });
+    var byPhone = {}, list = [];
+    readTable_('calls').filter(function (c) { return String(c.called_at).indexOf(today) === 0; })
+      .sort(function (a, b) { return b.id - a.id; })
+      .forEach(function (c) {
+        if (byPhone[c.phone]) { byPhone[c.phone].count_today++; return; }
+        var cu = custMap[c.phone] || {};
+        byPhone[c.phone] = { phone: c.phone, phone_display: formatPhone(c.phone), name: cu.name || '', called_at: c.called_at, count_today: 1, call_count: Number(cu.call_count) || 1 };
+        list.push(byPhone[c.phone]);
+      });
+    return { calls: list.slice(0, 30) };
+  });
+}
+
+/** 依電話查詢歷史交易品項 */
+function apiCustomerHistory(phoneInput) {
+  return wrap_(function () {
+    var phone = normalizePhone(phoneInput);
+    if (!phone) throw new Error('電話號碼格式錯誤。');
+    var cust = findCustomer_(phone);
+    var orders = readTable_('orders').filter(function (o) { return o.customer_phone === phone; })
+      .sort(function (a, b) { return b.id - a.id; });
+    var itemsAll = readTable_('order_items');
+    var agg = {};
+    var list = orders.slice(0, 20).map(function (o) {
+      var x = strip_(o);
+      x.items = itemsAll.filter(function (i) { return Number(i.order_id) === Number(o.id); }).map(strip_);
+      return x;
+    });
+    orders.filter(function (o) { return o.status !== 'cancelled'; }).forEach(function (o) {
+      itemsAll.filter(function (i) { return Number(i.order_id) === Number(o.id); }).forEach(function (i) {
+        var a = agg[i.name] || (agg[i.name] = { name: i.name, item_id: i.item_id, qty: 0, times: 0 });
+        a.qty += Number(i.qty) || 0; a.times += 1;
+      });
+    });
+    var top = Object.keys(agg).map(function (k) { return agg[k]; }).sort(function (a, b) { return b.qty - a.qty; });
+    return {
+      customer: cust ? decorateCustomer_(cust) : { phone: phone, phone_display: formatPhone(phone), name: '', call_count: 0 },
+      orders: list, order_count: orders.length, top_items: top,
+    };
+  });
+}
+
+/** 補 / 改客戶名稱 */
+function apiSaveCustomer(phoneInput, name) {
+  return wrap_(function () {
+    var phone = normalizePhone(phoneInput);
+    if (!phone) throw new Error('電話號碼格式錯誤。');
+    var n = String(name || '').trim().substring(0, 30);
+    var c = findCustomer_(phone);
+    var rec = c ? strip_(c) : { phone: phone, name: '', call_count: 0, last_call_at: '', last_order_at: '', created_at: nowText_() };
+    rec.name = n;
+    upsert_('customers', rec);
+    return { customer: decorateCustomer_(rec), message: '客戶名稱已儲存' };
   });
 }
 
@@ -449,7 +605,7 @@ function apiDbInfo(pin) {
 var HTTP_API = {
   apiBootstrap: apiBootstrap, apiPreview: apiPreview, apiCreateOrder: apiCreateOrder, apiMarkPrinted: apiMarkPrinted,
   apiOrders: apiOrders, apiCompleteOrder: apiCompleteOrder, apiCancelOrder: apiCancelOrder, apiReprintJob: apiReprintJob,
-  apiTestPrintJob: apiTestPrintJob, apiLookup: apiLookup, apiVerifyPin: apiVerifyPin,
+  apiTestPrintJob: apiTestPrintJob, apiLookup: apiLookup, apiVerifyPin: apiVerifyPin, apiLoadOrder: apiLoadOrder,
 };
 
 function apiHealth() {

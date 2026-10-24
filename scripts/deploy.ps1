@@ -7,6 +7,12 @@
     5. 等待 GitHub Actions：Pages 部署、線上測試、APK 編譯、模擬器測試、Release
     6. 下載 APK 到 dist\（有接 Android 裝置時可直接安裝）
 
+  模式（-Mode）：
+    Fast  快速部署驗證：本機單元測試 → GAS → Pages → 線上冒煙測試（約 3~5 分鐘，不重編 APK）
+          適用：只改 GAS 畫面 / 後台、網頁外殼；commit 訊息會加上 [fast]，GitHub Actions 略過 APK 與模擬器
+    Full  完整部署驗證：本機單元 + 端對端測試 → GAS → Pages → 線上測試 → APK → 模擬器測試 → Release → 安裝
+          適用：有改 Android App 或條碼模組 Android 部分（約 15~25 分鐘）
+
   參數：
     -SkipTests   略過本機測試
     -SkipGas     不重新部署 GAS
@@ -14,6 +20,8 @@
     -Message     部署說明
 #>
 param(
+    [ValidateSet('Fast', 'Full')]
+    [string]$Mode = 'Full',
     [switch]$SkipTests,
     [switch]$SkipGas,
     [switch]$NoWait,
@@ -24,6 +32,10 @@ param(
 Set-Location $Root
 $cfg = Read-DeployConfig
 if (-not $Message) { $Message = 'MPOS deploy ' + (Get-Date -Format 'yyyy-MM-dd HH:mm') }
+$fast = ($Mode -eq 'Fast')
+Write-Host ''
+if ($fast) { Write-Host '  ★ 快速部署驗證（GAS + 網頁，不重編 APK）' -ForegroundColor Cyan }
+else { Write-Host '  ★ 完整部署驗證（含 APK 編譯、模擬器測試、安裝）' -ForegroundColor Cyan }
 
 Write-Step '0/6 檢查環境'
 Require-Command git '請先執行「首次設定.bat」。'
@@ -34,20 +46,41 @@ if (-not (Test-Path (Join-Path $Root 'gas\.clasp.json'))) { Fail '找不到 gas\
 if (-not $cfg.repo) { Fail 'deploy.config.json 沒有 GitHub repo，請先執行「首次設定.bat」。' }
 Write-Ok "GitHub repo：$($cfg.repo)"
 
+if ($fast) {
+    $since = if ($cfg.PSObject.Properties.Name -contains 'lastFullSha') { $cfg.lastFullSha } else { '' }
+    $androidChanged = ''
+    if ($since) {
+        $androidChanged = (Get-NativeOutput 'git' @('diff', '--name-only', $since, '--', 'android', '條碼模組/android') 'git diff' -AllowFail).Trim()
+        $untracked = (Get-NativeOutput 'git' @('ls-files', '--others', '--exclude-standard', '--', 'android', '條碼模組/android') 'git ls-files' -AllowFail).Trim()
+        if ($untracked) { $androidChanged = ($androidChanged + "`n" + $untracked).Trim() }
+    } else {
+        $androidChanged = '（尚未記錄上次完整部署）'
+    }
+    if ($androidChanged) {
+        Write-Warn2 '偵測到 Android App 有變更，快速部署不會重編 APK：'
+        Write-Host $androidChanged -ForegroundColor DarkGray
+        $ans = Read-Host '  改用完整部署驗證嗎？(Y/n)'
+        if ($ans -ne 'n') { $fast = $false; $Mode = 'Full'; Write-Info '已切換為完整部署驗證' }
+    }
+}
+
 # ------------------------------------------------------------
 Write-Step '1/6 本機自動化測試'
 Invoke-Native 'node' @((Join-Path $Root 'scripts\sync_barcode.js')) '同步條碼模組'
 if ($SkipTests) { Write-Warn2 '已略過本機測試（-SkipTests）' }
 else {
     Invoke-Native 'npm' @('run', 'test:unit') 'GAS 單元測試'
+}
+if (-not $SkipTests -and -not $fast) {
     $pwOk = $true
     try { Invoke-Native 'npm' @('run', 'test:e2e') '外殼端對端測試' } catch { $pwOk = $false }
     if (-not $pwOk) {
         Write-Warn2 '端對端測試失敗；若是第一次執行，請先執行：npx playwright install chromium'
         Fail '本機測試未通過，已停止部署。'
     }
-    Write-Ok '本機測試全部通過'
+    Write-Ok '本機端對端測試通過'
 }
+if ($fast -and -not $SkipTests) { Write-Info '快速模式：略過端對端測試，部署後以線上冒煙測試驗證' }
 
 # ------------------------------------------------------------
 Write-Step '2/6 部署 Google Apps Script'
@@ -109,6 +142,7 @@ $wfDir = Join-Path $Root '.github\workflows'
 New-Item -ItemType Directory -Force -Path $wfDir | Out-Null
 Copy-Item (Join-Path $Root 'ci\ci-cd.yml') (Join-Path $wfDir 'ci-cd.yml') -Force
 Invoke-Native 'git' @('add', '-A') 'git add'
+if ($fast) { $Message = $Message + ' [fast]' }
 $changes = Get-NativeOutput 'git' @('status', '--porcelain') 'git status'
 if ($changes.Trim()) {
     Invoke-Native 'git' @('commit', '-m', $Message) 'git commit'
@@ -125,7 +159,8 @@ if ($NoWait) {
 }
 
 # ------------------------------------------------------------
-Write-Step '5/6 等待 GitHub Actions（測試 → Pages → 線上測試 → APK → 模擬器測試 → Release）'
+if ($fast) { Write-Step '5/6 等待 GitHub Actions（單元測試 → Pages → 線上冒煙測試）' }
+else { Write-Step '5/6 等待 GitHub Actions（測試 → Pages → 線上測試 → APK → 模擬器測試 → Release）' }
 $run = $null
 for ($i = 0; $i -lt 30 -and -not $run; $i++) {
     Start-Sleep -Seconds 4
@@ -134,7 +169,7 @@ for ($i = 0; $i -lt 30 -and -not $run; $i++) {
 }
 if (-not $run) { Fail "找不到這次推送的 GitHub Actions 執行紀錄：https://github.com/$($cfg.repo)/actions" }
 Write-Info "Actions：$($run.url)"
-Write-Info '（APK 編譯 + 模擬器測試約需 10~20 分鐘）'
+if ($fast) { Write-Info '（快速模式約 3~5 分鐘）' } else { Write-Info '（APK 編譯 + 模擬器測試約需 10~20 分鐘）' }
 & gh run watch $run.databaseId --repo $cfg.repo --exit-status --interval 20
 if ($LASTEXITCODE -ne 0) {
     Write-Warn2 '以下是失敗步驟的紀錄（最後 80 行）：'
@@ -147,6 +182,16 @@ if ($LASTEXITCODE -ne 0) {
     Fail "GitHub Actions 失敗，請查看：$($run.url)"
 }
 Write-Ok 'GitHub Actions 全部通過'
+
+if ($fast) {
+    Write-Step '快速部署驗證完成'
+    Write-Info "外殼網址（Pages）：$($cfg.pagesUrl)"
+    Write-Info "GAS 後台網址    ：$gasUrl"
+    Write-Info '平板上的 App 不用重裝：重新開啟 App（或按左下角 ⟳）即可看到新版畫面'
+    exit 0
+}
+Set-ConfigValue $cfg 'lastFullSha' $sha
+Save-DeployConfig $cfg
 
 # ------------------------------------------------------------
 Write-Step '6/6 下載 APK'

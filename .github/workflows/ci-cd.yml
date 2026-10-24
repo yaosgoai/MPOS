@@ -32,8 +32,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+        if: ${{ !contains(github.event.head_commit.message, '[fast]') }}
       - name: 單元測試 + 端對端測試（mock GAS）
+        if: ${{ !contains(github.event.head_commit.message, '[fast]') }}
         run: npm test
+      - name: 單元測試（快速部署）
+        if: ${{ contains(github.event.head_commit.message, '[fast]') }}
+        run: npm run test:unit
 
   pages:
     name: 部署 GitHub Pages
@@ -74,6 +79,8 @@ jobs:
     name: 編譯 APK + 模擬器測試 + 發佈
     needs: [pages, live-smoke]
     runs-on: ubuntu-latest
+    # 快速部署（commit 訊息含 [fast]）不重編 APK
+    if: ${{ !contains(github.event.head_commit.message, '[fast]') }}
     env:
       SHELL_URL: ${{ needs.pages.outputs.page_url }}
     steps:
@@ -103,8 +110,6 @@ jobs:
             echo "::warning::未設定 MPOS_KEYSTORE_BASE64，APK 將使用 debug 簽章（每次編譯簽章不同，無法覆蓋安裝）"
           fi
 
-      # 只跑 App 的 JVM 單元測試：條碼模組的 ZxingFallbackTest 使用 java.awt / javax.imageio，
-      # Android 單元測試環境沒有這些類別，無法在 Gradle 編譯（模組規則測試另以 node 執行）
       - name: 單元測試 + 編譯 Release APK
         working-directory: android
         env:

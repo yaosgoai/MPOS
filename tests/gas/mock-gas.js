@@ -60,6 +60,20 @@ class MockSheet {
     return last;
   }
   insertRowsAfter(after, n) { this.maxRows += n; }
+  deleteRow(r) {
+    const cells = {}, formats = {};
+    for (const k of Object.keys(this.cells)) {
+      const [row, col] = k.split(':').map(Number);
+      if (row === r) continue;
+      cells[(row > r ? row - 1 : row) + ':' + col] = this.cells[k];
+    }
+    for (const k of Object.keys(this.formats)) {
+      const [row, col] = k.split(':').map(Number);
+      if (row === r) continue;
+      formats[(row > r ? row - 1 : row) + ':' + col] = this.formats[k];
+    }
+    this.cells = cells; this.formats = formats;
+  }
   setFrozenRows() {}
 }
 

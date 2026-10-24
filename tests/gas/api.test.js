@@ -19,13 +19,13 @@ test('setup 建立工作表並匯入種子資料，重複執行不重複匯入',
   const g = fresh();
   const ss = Object.values(g.__store.spreadsheets)[0];
   const names = ss.getSheets().map((s) => s.getName()).sort();
-  assert.deepEqual(names, ['menu_items', 'note_presets', 'order_items', 'order_sources', 'orders', 'receipt_layout', 'settings']);
+  assert.deepEqual(names, ['calls', 'customers', 'menu_items', 'note_presets', 'order_items', 'order_sources', 'orders', 'receipt_layout', 'settings']);
   g.setup();
   const boot = plain(g.apiBootstrap());
   assert.equal(boot.ok, true);
   assert.equal(boot.all_menu.length, 8);
   assert.equal(boot.all_notes.length, 7);
-  assert.equal(boot.layout.length, 16);
+  assert.equal(boot.layout.length, 17);
   assert.deepEqual(boot.sources.map((x) => x.name), ['現場點餐', '來電點餐', 'Uber點餐', '親友點餐']);
   assert.equal(boot.settings.barcode_confirm, '1');
   assert.equal(boot.settings.encoding, 'cp950'); // 舊資料庫設定已匯入
@@ -230,4 +230,72 @@ test('舊版資料庫升級：沒有 order_sources 工作表時自動建立預�
   assert.equal(boot.sources.length, 4);
   assert.equal(ss.getSheetByName('order_sources').getLastRow(), 5);
   assert.equal(plain(g.apiSaveSource('1234', { name: '團購', sort_order: 50 })).sources.length, 5);
+});
+
+test('掛單 → 用條碼叫回 → 修改品項後找零結帳（單號不變、品項替換）', () => {
+  const g = fresh(() => new Date('2026-07-04T02:00:00Z'));
+  const held = plain(g.apiCreateOrder({ order_source: '來電點餐', hold: true, print: true, client_ref: 'H1',
+    customer_phone: '+886 912-345-678', customer_name: '', items: [{ id: 'custard', qty: 2, note: '先做' }] }));
+  assert.equal(held.ok, true, held.message);
+  assert.equal(held.order.pay_status, 'unpaid');
+  assert.equal(held.order.customer_phone, '0912345678');
+  const texts = held.print_job.lines.map((l) => l.text);
+  assert.ok(texts.includes('付款狀態：未付款（取餐時付款）'));
+  assert.ok(texts.includes('客戶：0912-345-678'));
+  // 重送掛單不重複
+  assert.equal(plain(g.apiCreateOrder({ order_source: '來電點餐', hold: true, print: false, client_ref: 'H1', items: [{ id: 'custard', qty: 2 }] })).duplicate, true);
+
+  const ld = plain(g.apiLoadOrder('2000007040014'));
+  assert.equal(ld.editable, true);
+  assert.equal(ld.order.items[0].note, '先做');
+
+  const paid = plain(g.apiCreateOrder({ order_id: ld.order.id, order_source: '來電點餐', client_ref: 'P1', customer_name: '王先生',
+    items: [{ id: 'custard', qty: 1 }, { id: 'tea_jelly', qty: 1 }], print: true, cash_received: 100 }));
+  assert.equal(paid.ok, true, paid.message);
+  assert.equal(paid.updated, true);
+  assert.equal(paid.order.order_no, '202607040001');
+  assert.equal(paid.order.total, 75);
+  assert.equal(paid.order.change_amount, 25);
+  assert.equal(paid.order.customer_name, '王先生');
+  assert.equal(paid.order.customer_phone, '0912345678', '沒帶電話時保留原電話');
+  const list = plain(g.apiOrders('2026-07-04')).orders;
+  assert.equal(list.length, 1);
+  assert.deepEqual(list[0].items.map((i) => i.name + 'x' + i.qty), ['卡士達x1', '茶凍x1']);
+  assert.equal(list[0].pay_status, 'paid');
+  // 重送結帳不重複；已付款不可再結帳
+  assert.equal(plain(g.apiCreateOrder({ order_id: ld.order.id, order_source: '來電點餐', client_ref: 'P1', items: [{ id: 'custard', qty: 1 }], print: false, cash_received: 45 })).duplicate, true);
+  assert.match(g.apiCreateOrder({ order_id: ld.order.id, order_source: '來電點餐', client_ref: 'P2', items: [{ id: 'custard', qty: 1 }], print: false, cash_received: 45 }).message, /已結帳/);
+  assert.equal(plain(g.apiLoadOrder('202607040001')).editable, false);
+});
+
+test('來電：記錄來電、顯示客戶名稱、今日來電清單、歷史交易品項', () => {
+  const g = fresh(() => new Date('2026-07-04T02:00:00Z'));
+  let r = plain(g.apiRegisterCall('0912345678'));
+  assert.equal(r.ok, true, r.message);
+  assert.equal(r.known, false);
+  assert.equal(r.customer.phone_display, '0912-345-678');
+  assert.equal(g.apiRegisterCall('12').ok, false);
+  plain(g.apiCreateOrder({ order_source: '來電點餐', customer_phone: '0912345678', customer_name: '王先生', items: [{ id: 'cheese', qty: 2 }], print: false }));
+  plain(g.apiCreateOrder({ order_source: '來電點餐', customer_phone: '0912345678', items: [{ id: 'cheese', qty: 1 }, { id: 'tea_jelly', qty: 1 }], print: false }));
+  r = plain(g.apiRegisterCall('+886912345678'));
+  assert.equal(r.known, true);
+  assert.equal(r.customer.name, '王先生', '空白名稱不覆蓋既有名稱');
+  assert.equal(r.customer.call_count, 2);
+  plain(g.apiRegisterCall('0422223333'));
+  const calls = plain(g.apiRecentCalls()).calls;
+  assert.deepEqual(calls.map((c) => [c.phone, c.name, c.count_today]), [['0422223333', '', 1], ['0912345678', '王先生', 2]]);
+  const hist = plain(g.apiCustomerHistory('0912-345-678'));
+  assert.equal(hist.order_count, 2);
+  assert.deepEqual(hist.top_items.map((x) => [x.name, x.qty]), [['起司', 3], ['茶凍', 1]]);
+  assert.equal(plain(g.apiSaveCustomer('0422223333', '李小姐')).customer.name, '李小姐');
+  assert.equal(plain(g.apiRecentCalls()).calls[0].name, '李小姐');
+});
+
+test('電話正規化', () => {
+  const g = fresh();
+  assert.equal(g.normalizePhone('+886-912-345-678'), '0912345678');
+  assert.equal(g.normalizePhone('886912345678'), '0912345678');
+  assert.equal(g.normalizePhone('(04) 2358-8577'), '0423588577');
+  assert.equal(g.normalizePhone('123'), '');
+  assert.equal(g.formatPhone('0912345678'), '0912-345-678');
 });

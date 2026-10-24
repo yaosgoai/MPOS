@@ -24,25 +24,19 @@ GAS 後端 ──> Google 試算表（settings / menu_items / note_presets / ord
    - 登入 GitHub、Google（第一次需到 <https://script.google.com/home/usersettings> 開啟「Google Apps Script API」）
    - 建立 Apps Script 專案 → **在開啟的編輯器中選 `setup` 函式並按「執行」完成授權**（會建立資料庫試算表並匯入舊資料）
    - 建立 GitHub repo、開啟 Pages、上傳 APK 簽章金鑰
-   - 最後自動執行一次「一鍵部署」
+   - 最後自動執行一次完整部署
 2. 部署完成後，APK 會下載到 `dist\`，複製到平板安裝（或接 USB 由腳本用 adb 直接安裝）。
 3. 平板先到「設定 → 藍牙」配對出單機，再開 App →「設定」頁（管理密碼預設 **1234**）→ 選擇出單機 →「設為出單機」→「測試列印」。
 
-## 日常部署
+## 日常部署（兩種）
 
-雙擊 **`一鍵部署.bat`**，會依序：
+| 檔案 | 何時用 | 內容 | 時間 |
+|---|---|---|---|
+| **`一鍵部署_快速部署驗證.bat`** | 只改 GAS 畫面 / 後台、網頁外殼 | 單元測試 → GAS → Pages → 線上冒煙測試（不重編 APK，平板重開 App 即生效） | 約 3~5 分鐘 |
+| **`一鍵部署_完整部署驗證.bat`** | 有改 Android App 或條碼模組 Android 部分 | 單元 + 端對端測試 → GAS → Pages → 線上測試 → APK → 模擬器測試 → Release → 安裝 | 約 15~25 分鐘 |
 
-| 步驟 | 內容 |
-|---|---|
-| 1 | 本機自動化測試（GAS 單元測試、外殼 + POS 端對端測試） |
-| 2 | `clasp push` 並更新同一個 GAS 部署（網址不變） |
-| 3 | GAS 線上健康檢查 `?api=health` |
-| 4 | 寫入 `docs/config.js`，git commit / push |
-| 5 | 等待 GitHub Actions：測試 → 部署 Pages → 線上冒煙測試 → 編譯 APK → Android 模擬器自動化測試 → 發佈 Release |
-| 6 | 下載 APK 到 `dist\`，偵測到 Android 裝置可直接安裝 |
-
-參數（在 PowerShell 執行 `scripts\deploy.ps1`）：`-SkipTests`、`-SkipGas`、`-NoWait`、`-Message "說明"`。
-commit 訊息含 `[skip emulator]` 可略過模擬器測試。
+快速部署若偵測到 `android/` 或 `條碼模組/android/` 自上次完整部署後有變更，會提醒並可改走完整部署。
+參數（PowerShell 執行 `scripts\deploy.ps1`）：`-Mode Fast|Full`、`-SkipTests`、`-SkipGas`、`-NoWait`、`-Message "說明"`。
 
 ## 安裝 APK 到平板
 
@@ -51,6 +45,14 @@ commit 訊息含 `[skip emulator]` 可略過模擬器測試。
 - 簽章不同 / 版本較新會詢問是否解除舊版後重裝
 - USB 安裝不行時可改為推送到平板「Download」資料夾手動點安裝
 - 參數：`-Latest` 先下載 GitHub 最新版、`-Force` 相同版本也重裝、`-Apk 路徑` 指定檔案
+
+## 來電與掛單（v1.3）
+
+- **來電清單**：App 偵測來電（需允許「電話」與「通話紀錄」權限、平板要有電話功能），號碼出現在分頁下方的來電清單；來過的號碼顯示客戶名稱。也可按「＋」手動記錄。
+- **長按來電號碼**：① 直接新增來電點餐（記錄電話與客戶名稱，名稱可空白之後再補）② 查詢歷史交易品項（可「再訂一次」）。
+- **掛單**：未付款先送出（可列印取餐單），之後在「訂單條碼」輸入單號或刷條碼叫回，再按「找零結帳 / 結帳」，單號不變。
+- **訂單條碼**：已付款的訂單叫回時只顯示內容並可補印。
+- 試算表新增 `customers`（客戶）、`calls`（來電紀錄）工作表；訂單新增付款狀態、客戶電話與名稱欄位（自動補欄位）。
 
 ## 條碼輸入（條碼模組）
 

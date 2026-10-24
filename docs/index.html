@@ -51,6 +51,7 @@
   var nativeCalls = {};   // id -> {source, origin}
   var gasSource = null, gasOrigin = '*';
   var readyTimer = null;
+  var pendingEvents = [];
 
   var state = window.MPOS_SHELL = {
     version: SHELL_VERSION,
@@ -150,6 +151,10 @@
         clearTimeout(readyTimer);
         overlay.classList.add('hidden');
       }
+      if(d.method === 'ready' && pendingEvents.length){
+        var q = pendingEvents; pendingEvents = [];
+        q.forEach(function(m){ ev.source.postMessage(m, ev.origin || '*'); });
+      }
       if(d.method === 'ready') return;
       reply(ev.source, ev.origin, d.id, true, nativeInfo());
       return;
@@ -196,11 +201,12 @@
       reply(c.source, c.origin, id, !!ok, payload);
     },
     onEvent: function(name, payloadJson){
-      if(!gasSource) return;
       var payload = {};
       try{ payload = JSON.parse(payloadJson || '{}'); }catch(e){}
       var msg = {source:'mpos-shell', event:name};
       Object.keys(payload).forEach(function(k){ msg[k] = payload[k]; });
+      // GAS 尚未載入完成時先排隊（例如 App 剛開啟就有來電）
+      if(!gasSource || !state.gasReady){ pendingEvents.push(msg); return; }
       gasSource.postMessage(msg, gasOrigin || '*');
     }
   };

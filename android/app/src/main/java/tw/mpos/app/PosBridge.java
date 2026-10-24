@@ -66,6 +66,8 @@ public class PosBridge {
             }
             o.put("printer", p);
             o.put("trusted", trusted());
+            o.put("call_monitor", CallMonitor.hasTelephony(webView.getContext()));
+            o.put("call_permission", CallMonitor.hasPermissions(webView.getContext()));
         } catch (Exception ignored) { }
         return o.toString();
     }
@@ -125,6 +127,13 @@ public class PosBridge {
     private void respond(String id, boolean ok, String payload) {
         final String js = "window.MPOSNative && window.MPOSNative.onResult("
                 + JSONObject.quote(id) + "," + ok + "," + JSONObject.quote(payload == null ? "" : payload) + ")";
+        main.post(() -> webView.evaluateJavascript(js, null));
+    }
+
+    /** 推送事件給外殼（例如來電），外殼再轉給 GAS 畫面 */
+    public void emitEvent(String name, JSONObject payload) {
+        final String js = "window.MPOSNative && window.MPOSNative.onEvent("
+                + JSONObject.quote(name) + "," + JSONObject.quote(payload == null ? "{}" : payload.toString()) + ")";
         main.post(() -> webView.evaluateJavascript(js, null));
     }
 

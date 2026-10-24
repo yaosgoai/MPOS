@@ -8,8 +8,12 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <!-- Android 12 以上：只連線已配對裝置，不掃描 -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- 來電偵測：顯示來電號碼與客戶名稱 -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
 
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
     <application
         android:allowBackup="false"

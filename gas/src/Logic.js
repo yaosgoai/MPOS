@@ -187,6 +187,9 @@ function buildReceiptLines(order, settings) {
   add('order_no', '單號：' + order.order_no);
   add('time', '時間：' + (order.created_at || ''));
   if (order.order_source) add('order_source', '來源：' + order.order_source);
+  if (order.customer_name || order.customer_phone) {
+    add('customer', '客戶：' + [order.customer_name || '', formatPhone(order.customer_phone)].join(' ').trim());
+  }
   add('separator', dash);
 
   (order.items || []).forEach(function (it) {
@@ -204,7 +207,10 @@ function buildReceiptLines(order, settings) {
   add('total', '合計：' + total + ' 元');
   add('separator', dash);
 
-  if (order.cash_received !== null && order.cash_received !== undefined && order.cash_received !== '' && Number(order.cash_received) > 0) {
+  if (order.pay_status === 'unpaid') {
+    add('payment', '付款狀態：未付款（取餐時付款）');
+    add('separator', dash);
+  } else if (order.cash_received !== null && order.cash_received !== undefined && order.cash_received !== '' && Number(order.cash_received) > 0) {
     var pm = String(order.payment_method || 'cash');
     add('payment', pm === 'cash' ? '付款方式：現金' : '付款方式：' + pm);
     add('payment', '收款：' + parseInt(order.cash_received, 10) + ' 元');
@@ -327,6 +333,23 @@ function validateSettings(input) {
   });
   if (clean.shop_name !== undefined && !clean.shop_name) throw new Error('店名不可空白。');
   return clean;
+}
+
+/** 電話正規化：只留數字（+886 轉 0 開頭），不合法回傳空字串 */
+function normalizePhone(v) {
+  var s = String(v === null || v === undefined ? '' : v).trim();
+  var d = s.replace(/\D/g, '');
+  if (s.charAt(0) === '+' && d.indexOf('886') === 0) d = '0' + d.substring(3);
+  else if (d.indexOf('886') === 0 && d.length >= 11) d = '0' + d.substring(3);
+  if (d.length < 6 || d.length > 15) return '';
+  return d;
+}
+
+/** 顯示用：0912345678 → 0912-345-678；04-23588577 類市話維持數字 */
+function formatPhone(v) {
+  var d = normalizePhone(v);
+  if (/^09\d{8}$/.test(d)) return d.substring(0, 4) + '-' + d.substring(4, 7) + '-' + d.substring(7);
+  return d;
 }
 
 /** 收款驗證：未輸入收款視為剛好 */

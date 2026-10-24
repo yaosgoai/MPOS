@@ -170,6 +170,15 @@ function updateFields_(table, keyValue, fields) {
   return found;
 }
 
+/** 刪除符合條件的列（由下往上刪，避免列號位移） */
+function deleteWhere_(table, pred) {
+  var rows = readTable_(table).filter(pred);
+  if (!rows.length) return 0;
+  var sh = getSheet_(table);
+  rows.map(function (r) { return r._row; }).sort(function (a, b) { return b - a; }).forEach(function (r) { sh.deleteRow(r); });
+  return rows.length;
+}
+
 function replaceTable_(table, objs) {
   var sh = getSheet_(table);
   var last = sh.getLastRow();

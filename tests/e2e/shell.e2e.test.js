@@ -84,7 +84,11 @@ test('外殼載入 GAS、跨網域 postMessage 握手、選擇藍牙出單機、
   await frame.waitForSelector('#orderOverlay.show');
   // 項目 1：卡士達 x2，此項備註「先做」
   await frame.click('.item-btn[data-id="custard"]');
-  await frame.click('.item-btn[data-id="custard"]');
+  // 步驟 2：確認數量（預設 1）
+  await frame.waitForSelector('#itemOverlay.show');
+  assert.equal(await frame.isVisible('#orderOverlay'), false);
+  assert.equal(await frame.innerText('#pickerQtyNum'), '1');
+  await frame.click('.picker-qty .qty-btn:not(.minus)');
   assert.equal(await frame.innerText('#pickerQtyNum'), '2');
   await frame.click('.note-chip >> text=先做');
   assert.match(await frame.innerText('#pickerTotal'), /90 元/);
@@ -92,7 +96,9 @@ test('外殼載入 GAS、跨網域 postMessage 握手、選擇藍牙出單機、
   await frame.waitForSelector('#orderOverlay.show');
   assert.equal(await frame.locator('.note-chip.active').count(), 0, '新項目的備註要重新選');
   // 項目 2：茶凍 x1，此項備註「分開裝」
+  await frame.waitForSelector('#orderOverlay.show');
   await frame.click('.item-btn[data-id="tea_jelly"]');
+  await frame.waitForSelector('#itemOverlay.show');
   await frame.click('.note-chip >> text=分開裝');
   await frame.click('#pickerDoneBtn');
   assert.equal(await frame.isVisible('#orderOverlay'), false);
@@ -101,8 +107,8 @@ test('外殼載入 GAS、跨網域 postMessage 握手、選擇藍牙出單機、
   assert.match(await frame.innerText('#totalValue'), /120 元/);
   // 修改項目 2：數量 +1
   await frame.click('#cartArea .cart-line >> nth=1');
-  await frame.waitForSelector('#orderOverlay.show');
-  assert.equal(await frame.innerText('#pickerTitle'), '修改訂購項目');
+  await frame.waitForSelector('#itemOverlay.show'); // 修改：直接開數量 / 備註視窗
+  assert.equal(await frame.innerText('#itemTitle'), '修改訂購項目');
   await frame.click('.picker-qty .qty-btn:not(.minus)');
   await frame.click('#pickerDoneBtn');
   assert.match(await frame.innerText('#totalValue'), /150 元/);
@@ -238,9 +244,11 @@ test('條碼輸入：所有輸入欄位都有掃描按鈕，掃描結果帶回�
   // 新增訂購視窗內的此項備註
   await frame.click('#newOrderBtn');
   await pickSource(frame, '現場點餐');
+  await frame.click('.item-btn[data-id="cheese"]');
+  await frame.waitForSelector('#itemOverlay.show');
   await frame.click('#lineNoteInput + .scan-btn');
   await frame.waitForFunction(() => document.getElementById('lineNoteInput').value === 'ABC-123');
-  await frame.click('#orderOverlay .checkout-close');
+  await frame.click('#itemOverlay .checkout-close');
 
   // 今日訂單：掃描小票 EAN13 → 自動查詢
   const o = JSON.parse(JSON.stringify(h.g.apiCreateOrder({ order_source: '現場點餐', items: [{ id: 'cheese', qty: 1 }], print: false }))).order;
@@ -312,7 +320,9 @@ async function addLine(frame, id, qty) {
   await frame.click('#newOrderBtn');
   if (await frame.isVisible('#sourceOverlay.show')) await pickSource(frame, '現場點餐');
   await frame.waitForSelector('#orderOverlay.show');
-  for (let i = 0; i < qty; i++) await frame.click('.item-btn[data-id="' + id + '"]');
+  await frame.click('.item-btn[data-id="' + id + '"]');
+  await frame.waitForSelector('#itemOverlay.show');
+  for (let i = 1; i < qty; i++) await frame.click('.picker-qty .qty-btn:not(.minus)');
   await frame.click('#pickerDoneBtn');
 }
 async function setPrinter(page) {
@@ -459,5 +469,95 @@ test('設定：條碼輸入可選「直接帶回」（不開確認窗）', async
   assert.equal(reqs[reqs.length - 1].confirm, false);
   // 還原設定，避免影響其他測試
   h.g.apiSaveSettings('1234', { barcode_confirm: '1' });
+  await ctx.close();
+});
+
+test('版面：標題列不顯示地址與訂購專線', async () => {
+  const { ctx, frame } = await openPos(true);
+  assert.equal(await frame.isVisible('#shopAddressHeader'), false);
+  assert.equal(await frame.isVisible('#shopPhoneHeader'), false);
+  await ctx.close();
+});
+
+test('掛單（未付款）→ 訂單條碼叫回 → 找零結帳（同一單號）；已付款訂單只能檢視 / 補印', async () => {
+  const { ctx, page, frame, errors } = await openPos(true);
+  await setPrinter(page);
+  await addLine(frame, 'custard', 2);
+  await frame.click('#holdBtn');
+  await frame.waitForSelector('#quickPayOverlay.show');
+  assert.equal(await frame.innerText('#quickPayTitle'), '掛單（未付款）');
+  await frame.click('#quickPayPrintBtn');
+  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('已掛單'));
+  const held = JSON.parse(JSON.stringify(h.g.apiOrders(''))).orders[0];
+  assert.equal(held.pay_status, 'unpaid');
+  const job = (await page.evaluate(() => window.__nativeCalls.filter((c) => c.method === 'print'))).pop().params.job;
+  assert.ok(job.lines.some((l) => l.text === '付款狀態：未付款（取餐時付款）'));
+
+  // 刷取餐單條碼叫回
+  await frame.fill('#orderCodeInput', h.g.barcodeNoToEan13(held.barcode_no));
+  await frame.press('#orderCodeInput', 'Enter');
+  await frame.waitForFunction(() => document.getElementById('loadedOrderTag').innerText.includes('未付款'));
+  assert.match(await frame.innerText('#cartArea'), /卡士達/);
+  await addLine(frame, 'tea_jelly', 1);
+  await frame.click('#checkoutBtn');
+  await frame.click('.quick-cash >> text=$500');
+  await frame.click('#checkoutConfirmBtn');
+  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('訂單已結帳'));
+  const paid = JSON.parse(JSON.stringify(h.g.apiLookup(held.order_no))).order;
+  assert.equal(paid.pay_status, 'paid');
+  assert.equal(paid.total, 120);
+  assert.equal(paid.change_amount, 380);
+  assert.equal(await frame.isVisible('#loadedOrderTag'), false);
+
+  // 已付款：顯示內容 + 補印，不帶回 POS
+  await frame.fill('#orderCodeInput', held.order_no);
+  await frame.click('.order-code-row .main-btn');
+  await frame.waitForSelector('#infoOverlay.show');
+  assert.match(await frame.innerText('#infoBody'), /已付款[\s\S]*茶凍/);
+  assert.equal(await frame.locator('#cartArea .cart-row').count(), 0);
+  await frame.click('#infoOverlay .checkout-close');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('來電：清單顯示、長按新增來電點餐（記錄電話 / 名稱）、再次來電顯示名稱、查歷史並再訂一次', async () => {
+  const { ctx, page, frame, errors } = await openPos(true);
+  await setPrinter(page);
+  const call = (phone) => page.evaluate((p) => window.MPOSNative.onEvent('incoming_call', JSON.stringify({ phone: p })), phone);
+  await call('+886912000111');
+  await frame.waitForFunction(() => document.querySelectorAll('#callList .call-chip').length >= 1);
+  const chip = frame.locator('#callList .call-chip', { hasText: '0912-000-111' });
+  assert.match(await chip.innerText(), /未命名/);
+
+  // 長按 → 新增來電點餐（名稱可空白，這裡先填）
+  await chip.click({ button: 'right' });
+  await frame.waitForSelector('#callOverlay.show');
+  await frame.fill('#callNameInput', '陳小姐');
+  await frame.click('#callNewOrderBtn');
+  await frame.waitForSelector('#orderOverlay.show');
+  assert.equal(await frame.innerText('#sourceName'), '來電點餐');
+  assert.equal(await frame.innerText('#customerPhoneText'), '0912-000-111');
+  await frame.click('.item-btn[data-id="cheese"]');
+  await frame.click('.picker-qty .qty-btn:not(.minus)');
+  await frame.click('#pickerDoneBtn');
+  await frame.click('#holdBtn');
+  await frame.click('#quickPayNoPrintBtn');
+  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('已掛單'));
+  const o = JSON.parse(JSON.stringify(h.g.apiOrders(''))).orders[0];
+  assert.deepEqual([o.order_source, o.customer_phone, o.customer_name, o.pay_status], ['來電點餐', '0912000111', '陳小姐', 'unpaid']);
+
+  // 再次來電：顯示客戶名稱
+  await call('0912000111');
+  await frame.waitForFunction(() => /陳小姐/.test(document.getElementById('callList').innerText));
+  // 長按 → 查詢歷史交易品項 → 再訂一次
+  await frame.locator('#callList .call-chip', { hasText: '陳小姐' }).click({ button: 'right' });
+  await frame.click('#callHistoryBtn');
+  await frame.waitForSelector('#infoOverlay.show');
+  assert.match(await frame.innerText('#infoBody'), /起司 ×2/);
+  await frame.click('#infoBody .hist-order .small-btn');
+  await frame.waitForFunction(() => document.querySelectorAll('#cartArea .cart-row').length === 1);
+  assert.match(await frame.innerText('#cartArea'), /起司/);
+  assert.equal(await frame.inputValue('#customerNameInput'), '陳小姐');
+  assert.deepEqual(errors, []);
   await ctx.close();
 });

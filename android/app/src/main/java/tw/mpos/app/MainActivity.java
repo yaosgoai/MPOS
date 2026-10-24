@@ -37,6 +37,7 @@ public class MainActivity extends ComponentActivity {
     private WebView webView;
     private PosBridge bridge;
     private WebViewScanBridge scanBridge;
+    private CallMonitor callMonitor;
 
     public WebView getWebView() { return webView; }
 
@@ -112,7 +113,18 @@ public class MainActivity extends ComponentActivity {
             public void handleOnBackPressed() { showExitDialog(); }
         });
 
-        requestBluetoothPermission();
+        requestRuntimePermissions();
+
+        // 來電偵測：響鈴時把號碼送到 POS 畫面上方的來電清單
+        callMonitor = new CallMonitor(this, phone -> {
+            try {
+                org.json.JSONObject o = new org.json.JSONObject();
+                o.put("phone", phone);
+                o.put("at", System.currentTimeMillis());
+                bridge.emitEvent("incoming_call", o);
+            } catch (Exception ignored) { }
+        });
+        if (CallMonitor.hasPermissions(this)) callMonitor.start();
     }
 
     private void showOffline(String reason) {
@@ -124,10 +136,23 @@ public class MainActivity extends ComponentActivity {
         webView.loadDataWithBaseURL(BuildConfig.SHELL_URL, html, "text/html", "UTF-8", null);
     }
 
-    private void requestBluetoothPermission() {
+    /** 一次要求：藍牙（出單機）、電話狀態 + 通話紀錄（來電號碼） */
+    private void requestRuntimePermissions() {
+        java.util.List<String> need = new java.util.ArrayList<>();
         if (Build.VERSION.SDK_INT >= 31 && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT}, REQ_BT);
+            need.add(Manifest.permission.BLUETOOTH_CONNECT);
         }
+        if (CallMonitor.hasTelephony(this)) {
+            if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) need.add(Manifest.permission.READ_PHONE_STATE);
+            if (checkSelfPermission(Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) need.add(Manifest.permission.READ_CALL_LOG);
+        }
+        if (!need.isEmpty()) requestPermissions(need.toArray(new String[0]), REQ_BT);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (callMonitor != null && CallMonitor.hasPermissions(this)) callMonitor.start();
     }
 
     private void hideSystemBars() {
@@ -161,6 +186,7 @@ public class MainActivity extends ComponentActivity {
 
     @Override
     protected void onDestroy() {
+        if (callMonitor != null) callMonitor.stop();
         if (bridge != null) bridge.shutdown();
         if (webView != null) webView.destroy();
         super.onDestroy();
