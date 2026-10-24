@@ -32,23 +32,17 @@
 <section id="tab-pos" class="tab-page active">
   <div class="pos-single">
     <section class="panel">
-      <div class="pos-head">
-        <div class="pos-head-left">
-          <div class="pos-title-row">
-            <h2 class="section-title pos-title">訂單</h2>
-            <button type="button" id="sourceBar" class="source-chip" style="display:none" onclick="openSourcePicker(false)" title="點一下變更訂單來源"><b id="sourceName"></b><span class="chg">變更</span></button>
-            <span id="loadedOrderTag" class="loaded-tag" style="display:none"></span>
-            <button type="button" id="cancelLoadedBtn" class="small-btn danger-btn" style="display:none" onclick="cancelLoadedOrder()">取消此單</button>
-          </div>
-          <span id="draftState" class="draft-state"></span>
-        </div>
+      <div class="pos-head pos-bar">
+        <button type="button" id="sourceBar" class="source-chip" style="display:none" onclick="openSourcePicker(false)" title="點一下變更訂單來源"><b id="sourceName"></b></button>
+        <input id="orderCodeInput" data-scan-submit="loadOrderByCode" enterkeyhint="search" placeholder="訂單號碼 / 刷訂單條碼" onkeydown="if(event.key==='Enter'){event.preventDefault();loadOrderByCode();}" oninput="orderCodeAuto()">
+        <button class="main-btn gray-btn code-btn" onclick="loadOrderByCode()">查詢</button>
         <button id="newOrderBtn" class="main-btn new-order-btn" onclick="openOrderPicker()">＋新購</button>
       </div>
-      <div class="order-code-row">
-        <label for="orderCodeInput">訂單條碼</label>
-        <input id="orderCodeInput" data-scan-submit="loadOrderByCode" placeholder="輸入訂單號碼或刷訂單條碼" onkeydown="if(event.key==='Enter'){event.preventDefault();loadOrderByCode();}" oninput="orderCodeAuto()">
-        <button class="main-btn gray-btn" onclick="loadOrderByCode()">查詢</button>
+      <div id="loadedBar" class="loaded-bar" style="display:none">
+        <span id="loadedOrderTag" class="loaded-tag"></span>
+        <button type="button" id="cancelLoadedBtn" class="small-btn danger-btn" style="display:none" onclick="cancelLoadedOrder()">取消此單</button>
       </div>
+      <span id="draftState" class="draft-state" style="display:none"></span>
       <div id="customerBar" class="customer-bar" style="display:none">
         <span>客戶：</span><b id="customerPhoneText"></b>
         <input id="customerNameInput" data-noscan maxlength="30" placeholder="客戶名稱（可之後再補）" oninput="customerName=this.value;Draft.save()">
@@ -60,8 +54,7 @@
       <div id="posMsg" class="message"></div>
       <div id="receiptPreview" class="receipt-preview"></div>
       </div>
-      <h2 class="section-title" style="margin-top:14px;">整張訂單備註</h2>
-      <textarea id="orderNoteInput" placeholder="整張訂單的備註，例如：18:30 取餐" oninput="Draft.save()"></textarea>
+      <textarea id="orderNoteInput" class="order-note" data-scan-longpress rows="2" placeholder="整張訂單備註（長按可掃條碼）" oninput="Draft.save()"></textarea>
       <div class="total-box"><div class="total-label">總金額</div><div class="total-value" id="totalValue">0 元</div></div>
       <div class="action-row action-row-4">
         <button id="checkoutBtn" class="main-btn print-btn" onclick="openCheckout()">找零結帳</button>
@@ -639,6 +632,7 @@ function attachScanButtons(root){
   (root||document).querySelectorAll('input,textarea').forEach(function(el){
     if(el.dataset.scanReady || !scannable(el) || !el.parentNode) return;
     el.dataset.scanReady='1';
+    if(el.dataset.scanLongpress!==undefined){ bindScanLongPress(el); return; }
     var wrap=document.createElement('div');
     wrap.className='scan-wrap'+(el.tagName==='TEXTAREA'?' scan-wrap-ta':'');
     el.parentNode.insertBefore(wrap, el);
@@ -654,6 +648,20 @@ function scanErrorText(code){
   return ({camera_permission:'沒有相機權限，請允許使用相機',camera_unavailable:'無法開啟相機（沒有相機或被占用）',engine_unavailable:'條碼辨識元件載入失敗，請確認網路',
     popup_blocked:'瀏覽器擋住了掃描視窗，請允許彈出視窗',no_scan_page:'請從 App 或 GitHub 網頁外殼開啟才能掃描',native_unavailable:'App 掃描功能無法使用',
     invalid_result:'讀到的條碼內容無效，請重新掃描',bad_request:'掃描要求格式錯誤'})[code] || ('掃描失敗：'+code);
+}
+/** 長按輸入欄位叫出條碼掃描（不顯示掃描按鈕），掃到的內容接在目前文字後面 */
+function bindScanLongPress(el){
+  var t=null, sx=0, sy=0, busy=false;
+  function go(){
+    if(busy) return; busy=true;   // 計時器與 contextmenu 可能都觸發，只開一次
+    if(navigator.vibrate) try{navigator.vibrate(30);}catch(x){}
+    try{ el.blur(); }catch(x){}
+    Promise.resolve(scanInto(el)).finally(function(){ busy=false; });
+  }
+  el.addEventListener('pointerdown', function(e){ sx=e.clientX; sy=e.clientY; clearTimeout(t); t=setTimeout(go, 600); });
+  el.addEventListener('pointermove', function(e){ if(Math.abs(e.clientX-sx)>10 || Math.abs(e.clientY-sy)>10) clearTimeout(t); });
+  ['pointerup','pointercancel','pointerleave'].forEach(function(ev){ el.addEventListener(ev, function(){ clearTimeout(t); }); });
+  el.addEventListener('contextmenu', function(e){ e.preventDefault(); clearTimeout(t); go(); });
 }
 async function scanInto(el){
   if(typeof BarcodeScan==='undefined'){ toast('條碼模組未載入'); return; }
@@ -842,7 +850,7 @@ function changeQty(key,d){ cart.forEach(function(l){ if(l.key===key) l.qty+=d; }
 function renderCart(){
   $('sourceBar').style.display = (orderSource || loadedOrder) ? 'inline-flex' : 'none';
   $('sourceName').innerText = orderSource || '選擇來源';
-  $('loadedOrderTag').style.display = loadedOrder ? 'inline-block' : 'none';
+  $('loadedBar').style.display = loadedOrder ? 'flex' : 'none';
   $('loadedOrderTag').innerText = loadedOrder ? '叫回單號 '+loadedOrder.order_no+'（未付款）' : '';
   $('cancelLoadedBtn').style.display = loadedOrder ? 'inline-block' : 'none';
   $('customerBar').style.display = customerPhone ? 'flex' : 'none';

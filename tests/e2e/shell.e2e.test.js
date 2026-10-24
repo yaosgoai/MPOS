@@ -246,18 +246,18 @@ test('條碼輸入：所有輸入欄位都有掃描按鈕，掃描結果帶回�
 
   // 所有可輸入的欄位旁都有掃描按鈕（密碼、隱藏欄位、日期、版型表格除外）
   const missing = await frame.evaluate(() => Array.from(document.querySelectorAll('input,textarea'))
-    .filter((el) => !['password', 'hidden', 'date', 'checkbox'].includes(el.type) && !el.closest('[data-noscan]'))
+    .filter((el) => !['password', 'hidden', 'date', 'checkbox'].includes(el.type) && !el.closest('[data-noscan]') && el.dataset.scanLongpress === undefined)
     .filter((el) => !(el.parentNode.classList.contains('scan-wrap') && el.parentNode.querySelector('.scan-btn')))
     .map((el) => el.id || el.name || el.outerHTML.slice(0, 60)));
   assert.deepEqual(missing, []);
   assert.equal(await frame.locator('#pinInput + .scan-btn').count(), 0, '密碼欄不應有掃描按鈕');
 
   // 整張訂單備註（textarea）：掃描後帶回
-  await frame.click('#orderNoteInput + .scan-btn');
+  await frame.click('#orderNoteInput', { button: 'right' });
   await frame.waitForFunction(() => document.getElementById('orderNoteInput').value === '2000007040014');
   // 再掃一次：textarea 換行附加
   await frame.evaluate(() => { window.__nextScan = { status: 'ok', text: 'ABC-123', format: 'code_128', engine: 'mlkit' }; });
-  await frame.click('#orderNoteInput + .scan-btn');
+  await frame.click('#orderNoteInput', { button: 'right' });
   await frame.waitForFunction(() => document.getElementById('orderNoteInput').value === '2000007040014\nABC-123');
 
   // 新增訂購視窗內的此項備註
@@ -309,7 +309,7 @@ test('條碼輸入：一般瀏覽器（沒有 App）改開 GitHub Pages 掃描�
   await frame.waitForFunction(() => window.__MPOS_READY__ === true);
   await frame.waitForFunction(() => Bridge.info && Bridge.info.shell_url);
   const popupP = ctx.waitForEvent('page');
-  await frame.click('#orderNoteInput + .scan-btn');
+  await frame.click('#orderNoteInput', { button: 'right' });
   const popup = await popupP;
   assert.match(popup.url(), /\/barcode\/scan\.html\?id=[0-9a-f]{32}&origin=/);
   await popup.close();
@@ -480,7 +480,7 @@ test('設定：條碼輸入可選「直接帶回」（不開確認窗）', async
   await frame.click('text=儲存設定');
   await frame.waitForFunction(() => document.getElementById('settingsMsg').innerText.includes('設定已儲存'));
   await frame.click('button[data-tab="pos"]');
-  await frame.click('#orderNoteInput + .scan-btn');
+  await frame.click('#orderNoteInput', { button: 'right' });
   await frame.waitForFunction(() => document.getElementById('orderNoteInput').value === '2000007040014');
   const reqs = await frame.evaluate(() => window.__scanRequests);
   assert.equal(reqs[reqs.length - 1].confirm, false);
@@ -528,7 +528,7 @@ test('掛單（未付款）→ 訂單條碼叫回 → 找零結帳（同一單�
 
   // 已付款：顯示內容 + 補印，不帶回 POS
   await frame.fill('#orderCodeInput', held.order_no);
-  await frame.click('.order-code-row .main-btn');
+  await frame.click('.pos-bar .code-btn');
   await frame.waitForSelector('#infoOverlay.show');
   assert.match(await frame.innerText('#infoBody'), /已付款[\s\S]*茶凍/);
   assert.equal(await frame.locator('#cartArea .cart-row').count(), 0);
@@ -628,12 +628,17 @@ test('v1.5 版面：標題不顯示版本 / 藍牙（移到設定）、來電列
   await frame.click('#newOrderBtn');
   await pickSource(frame, '來電點餐');
   await frame.click('#orderOverlay .checkout-close');
-  assert.equal(await frame.locator('.pos-head #sourceBar').count(), 1, '訂單來源應在「訂單」標題列');
-  assert.equal((await frame.innerText('.pos-title')).trim(), '訂單');
+  // 上方一列：來源 + 訂單條碼 + 新購；沒有「訂單」標題
+  assert.equal(await frame.locator('.pos-title').count(), 0);
+  const tops = await frame.evaluate(() => ['sourceBar', 'orderCodeInput', 'newOrderBtn'].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); return Math.round(r.top + r.height / 2); }));
+  assert.ok(Math.max(...tops) - Math.min(...tops) <= 4, '來源、訂單條碼、新購要在同一列 ' + tops);
+  // 備註：沒有標題、沒有掃描按鈕（長按掃描）
+  assert.equal(await frame.locator('#tab-pos h2', { hasText: '整張訂單備註' }).count(), 0);
+  assert.equal(await frame.locator('#orderNoteInput + .scan-btn').count(), 0);
   const yNote = await frame.evaluate(() => document.getElementById('orderNoteInput').getBoundingClientRect().bottom);
   const yTotal = await frame.evaluate(() => document.querySelector('#tab-pos .total-box').getBoundingClientRect().top);
   assert.ok(yNote <= yTotal, '整張訂單備註要在總金額上方');
-  assert.match(await frame.innerText('.pos-head'), /^訂單[\s\S]*來電點餐/);
+  assert.match(await frame.innerText('.pos-bar'), /來電點餐/);
   await frame.click('#sourceBar');
   await frame.waitForSelector('#sourceOverlay.show');
   assert.deepEqual(errors, []);
@@ -684,7 +689,7 @@ test('v1.5 條碼設定立即生效（不必按儲存）；訂單條碼刷完（
   await frame.waitForSelector('#tab-settings.active');
   await frame.selectOption('#sBarcodeConfirm', '0');
   await frame.click('button[data-tab="pos"]');
-  await frame.click('#orderNoteInput + .scan-btn');
+  await frame.click('#orderNoteInput', { button: 'right' });
   await frame.waitForFunction(() => window.__scanRequests.length === 1);
   assert.equal((await frame.evaluate(() => window.__scanRequests[0])).confirm, false);
   // 重新整理後仍記得（存在外殼）

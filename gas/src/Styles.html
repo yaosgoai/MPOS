@@ -343,4 +343,15 @@ body.measuring #tab-pos .pos-scroll{flex:none;height:110px;min-height:0}
 .rate-bar span{display:block;height:100%;background:var(--danger)}
 #tab-pos .pos-title-row .small-btn{margin:0}
 @media (max-width:700px){.cancel-grid,.cancel-fields{grid-template-columns:1fr}}
+
+/* ---- v1.8：POS 上方一列（來源 + 訂單條碼 + 查詢 + 新購），備註不顯示標題 / 掃描按鈕（長按掃描） ---- */
+.pos-bar{display:flex!important;flex-direction:row!important;align-items:center!important;gap:6px;flex-wrap:nowrap}
+.pos-bar .source-chip{flex:none;padding:6px 12px;white-space:nowrap}
+.pos-bar .scan-wrap{flex:1 1 auto;min-width:0;width:auto}
+.pos-bar > input{flex:1 1 auto;min-width:0}
+.pos-bar .main-btn{flex:none;white-space:nowrap;padding:10px 12px}
+.pos-bar .new-order-btn{padding:10px 14px}
+.loaded-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px}
+#tab-pos textarea.order-note{min-height:0;height:auto;margin-top:8px;resize:none}
+@media (max-width:480px){ .pos-bar .code-btn{display:none} .pos-bar .main-btn{padding:10px} }
 </style>
