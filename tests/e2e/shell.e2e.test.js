@@ -125,7 +125,11 @@ test('外殼載入 GAS、跨網域 postMessage 握手、選擇藍牙出單機、
   assert.match(await frame.innerText('#cartArea'), /※ 先做[\s\S]*※ 分開裝/);
   assert.match(await frame.innerText('#totalValue'), /120 元/);
   // 修改項目 2：數量 +1
-  await frame.click('#cartArea .cart-line >> nth=1');
+  assert.equal(await frame.locator('#cartArea .qty-btn').count(), 0, '主畫面不再有 +/-');
+  assert.deepEqual(await frame.$$eval('#cartArea .cart-head span', (x) => x.map((e) => e.innerText.trim())), ['品名', '單價', '數量', '小計']);
+  await frame.click('#cartArea .cart-row >> nth=1');   // 短按只提示，不開視窗
+  assert.equal(await frame.isVisible('#itemOverlay.show'), false);
+  await frame.click('#cartArea .cart-row >> nth=1', { button: 'right' });   // 長按（觸控長按 / 滑鼠右鍵）
   await frame.waitForSelector('#itemOverlay.show'); // 修改：直接開數量 / 備註視窗
   assert.equal(await frame.innerText('#itemTitle'), '修改訂購項目');
   await frame.click('.picker-qty .qty-btn:not(.minus)');

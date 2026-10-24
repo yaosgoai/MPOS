@@ -354,4 +354,22 @@ body.measuring #tab-pos .pos-scroll{flex:none;height:110px;min-height:0}
 .loaded-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px}
 #tab-pos textarea.order-note{min-height:0;height:auto;margin-top:8px;resize:none}
 @media (max-width:480px){ .pos-bar .code-btn{display:none} .pos-bar .main-btn{padding:10px} }
+
+/* ---- v1.9：訂單品項表格（品名 / 單價 / 數量 / 小計），長按修改 ---- */
+.cart-grid{border:2px solid var(--border);border-radius:12px;overflow:hidden;background:#fff;box-shadow:0 2px 8px rgba(80,40,0,.08)}
+.cart-head,.cart-grid .cart-row{display:grid;grid-template-columns:minmax(0,1fr) 4em 3.6em 4.4em;align-items:stretch;column-gap:0}
+.cart-head{position:sticky;top:0;z-index:1;background:linear-gradient(90deg,var(--main2),var(--main));color:#fff;font-weight:900;font-size:var(--fs-sm)}
+.cart-head span.num{text-align:right}
+.cart-head span{padding:8px 10px;white-space:nowrap}
+.cart-grid .cart-row{border-top:1px solid #f0dfc2;cursor:pointer;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;transition:background .12s;padding:0}
+.cart-grid .cart-row.alt{background:#fffaf0}
+.cart-grid .cart-row:active{background:#ffe6b8}
+.cart-grid .cart-row > span{display:flex;flex-direction:column;justify-content:center;padding:10px;border-left:1px dashed #ead5b5;font-size:var(--fs-md)}
+.cart-grid .cart-row > span:first-child,.cart-head span:first-child{border-left:0}
+.cart-grid .num{text-align:right;align-items:flex-end;font-variant-numeric:tabular-nums}
+.c-name{font-weight:900;line-height:1.3;word-break:break-word}
+.c-name .line-note{display:block;margin-top:2px;font-size:var(--fs-sm)}
+.c-qty{font-weight:900;color:var(--main2)}
+.c-sub{font-weight:900;color:var(--danger)}
+.cart-hint{border-top:1px solid #f0dfc2;padding:5px 10px;font-size:var(--fs-xs);color:var(--muted);text-align:center;background:#fff8e8}
 </style>

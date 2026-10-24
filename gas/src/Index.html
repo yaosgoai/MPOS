@@ -861,15 +861,19 @@ function renderCart(){
   Draft.save();
   var items=cartItems(), area=$('cartArea');
   if(!items.length){ area.className='cart-empty'; area.innerHTML='尚未點選商品，請按「＋新購」'; $('totalValue').innerText='0 元'; return; }
-  var html='';
-  items.forEach(function(l){
-    var k=escapeHtml(l.key), n=lineNote(l);
-    html+='<div class="cart-row"><div class="cart-line" data-key="'+k+'" onclick="openOrderPicker(this.dataset.key)"><div class="cart-name">'+escapeHtml(l.name)+' <span class="edit-hint">✎</span></div>'+
-      (n?'<div class="line-note">※ '+escapeHtml(n)+'</div>':'')+
-      '<div class="cart-meta">單價 '+money(l.price)+'</div><div class="subtotal">小計 '+money(l.price*l.qty)+'</div></div>'+
-      '<div class="qty-box"><button class="qty-btn minus" data-key="'+k+'" onclick="changeQty(this.dataset.key,-1)">－</button><div class="qty-num">'+l.qty+'</div><button class="qty-btn" data-key="'+k+'" onclick="changeQty(this.dataset.key,1)">＋</button></div></div>';
+  var html='<div class="cart-grid"><div class="cart-head"><span>品名</span><span class="num">單價</span><span class="num">數量</span><span class="num">小計</span></div>';
+  items.forEach(function(l, idx){
+    var n=lineNote(l);
+    html+='<div class="cart-row'+(idx%2?' alt':'')+'" data-key="'+escapeHtml(l.key)+'">'+
+      '<span class="c-name">'+escapeHtml(l.name)+(n?'<span class="line-note">※ '+escapeHtml(n)+'</span>':'')+'</span>'+
+      '<span class="num c-price">'+(parseInt(l.price,10)||0)+'</span><span class="num c-qty">'+l.qty+'</span>'+
+      '<span class="num c-sub">'+((parseInt(l.price,10)||0)*l.qty)+'</span></div>';
   });
+  html+='<div class="cart-hint">長按品項可修改數量、備註或刪除</div></div>';
   area.className=''; area.innerHTML=html; $('totalValue').innerText=money(total());
+  area.querySelectorAll('.cart-row').forEach(function(row){
+    bindLongPress(row, function(){ openOrderPicker(row.dataset.key); }, function(){ toast('長按品項可修改'); });
+  });
 }
 function newDraftRef(){ return 'D'+Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
 function clearCart(withMsg){
