@@ -147,7 +147,7 @@ test('外殼載入 GAS、跨網域 postMessage 握手、選擇藍牙出單機、
   assert.equal(texts[texts.indexOf('卡士達') + 1], '  ※先做');
   assert.equal(texts[texts.indexOf('茶凍') + 1], '  ※分開裝');
   assert.ok(texts.includes('王先生 18:30 取餐'));
-  assert.ok(texts.includes('來源：來電點餐'));
+  assert.ok(texts.includes('【來電點餐】'));
 
   // 後端已記錄列印時間
   const orders = JSON.parse(JSON.stringify(h.g.apiOrders('2026-07-04'))).orders;
@@ -360,7 +360,7 @@ test('結帳（不找零）：確認是否列印 → 列印並結帳 / 不列印
   await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('列印成功'));
   let calls = await page.evaluate(() => window.__nativeCalls.filter((c) => c.method === 'print'));
   assert.equal(calls.length, 1);
-  assert.ok(calls[0].params.job.lines.some((l) => l.text === '來源：現場點餐'));
+  assert.ok(calls[0].params.job.lines.some((l) => l.text === '【現場點餐】'));
 
   await addLine(frame, 'custard', 1);
   await frame.click('#quickPayBtn');
@@ -740,5 +740,140 @@ test('v1.5 來電錄音：一般瀏覽器不顯示錄音區', async () => {
   const { ctx, frame } = await openPos(false);
   await frame.evaluate(() => openCallMenu({ phone: '0910670803', phone_display: '0910-670-803', called_at: '2026-10-24 17:42:00' }, { autoplay: true }));
   assert.equal(await frame.isVisible('#recBox'), false);
+  await ctx.close();
+});
+
+test('v1.6 重置：游標移到訂單條碼並清空；列印時訂單來源在最上方大字、條碼用 ESC * 點陣', async () => {
+  const { ctx, page, frame, errors } = await openPos(true);
+  await setPrinter(page);
+  await addLine(frame, 'custard', 1);
+  await frame.fill('#orderCodeInput', '12345');
+  await frame.click('#resetBtn');
+  await frame.waitForFunction(() => document.activeElement && document.activeElement.id === 'orderCodeInput');
+  assert.equal(await frame.inputValue('#orderCodeInput'), '');
+  assert.equal(await frame.evaluate(() => cartItems().length), 0);
+  // 空單再按重置也一樣
+  await frame.fill('#orderCodeInput', '999');
+  await frame.click('#orderNoteInput');
+  await frame.click('#resetBtn');
+  await frame.waitForFunction(() => document.activeElement.id === 'orderCodeInput' && document.getElementById('orderCodeInput').value === '');
+
+  await addLine(frame, 'custard', 1);
+  await frame.click('#quickPayBtn');
+  await frame.click('#quickPayPrintBtn');
+  await page.waitForFunction(() => window.__nativeCalls.some((c) => c.method === 'print'));
+  const job = (await page.evaluate(() => window.__nativeCalls.filter((c) => c.method === 'print'))).pop().params.job;
+  assert.equal(job.lines[0].role, 'order_source');
+  assert.match(job.lines[0].text, /^【.+】$/);
+  assert.equal(job.lines[0].font_pt, 16);
+  assert.equal(job.lines[1].role, 'barcode');
+  assert.equal(job.printer.barcode_mode, 'escstar');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('v1.7 取消訂單：結帳後直接取消（需選誰取消 + 原因），列印取消單，後台顯示註記與退單分析', async () => {
+  const { ctx, page, frame, errors } = await openPos(true);
+  await setPrinter(page);
+  await addLine(frame, 'custard', 2);
+  await frame.click('#quickPayBtn');
+  await frame.click('#quickPayPrintBtn');
+  await frame.waitForSelector('#lastOrderBar', { state: 'visible' });
+  const orderNo = await frame.evaluate(() => lastOrder.order_no);
+  await frame.click('#lastOrderCancelBtn');
+  await frame.waitForSelector('#cancelOverlay.show');
+  assert.equal(await frame.inputValue('#cancelRefund'), '90', '已付款預設全額退款');
+  await frame.click('#cancelConfirmBtn');
+  assert.match(await frame.innerText('#cancelMsg'), /客戶取消|店家取消/);
+  await frame.click('#cancelOverlay .cancel-type[data-type="customer"]');
+  await frame.click('#cancelConfirmBtn');
+  assert.match(await frame.innerText('#cancelMsg'), /原因/);
+  await frame.click('#cancelReasons .cancel-reason >> text=等候太久');
+  await frame.fill('#cancelNote', '等了 40 分鐘');
+  await frame.check('#cancelPrint');
+  await frame.click('#cancelConfirmBtn');
+  await frame.waitForSelector('#cancelOverlay.show', { state: 'hidden' });
+  await frame.waitForSelector('#lastOrderBar', { state: 'hidden' });
+  const o = JSON.parse(JSON.stringify(h.g.apiLookup(orderNo))).order;
+  assert.equal(o.status, 'cancelled');
+  assert.equal(o.cancel_type, 'customer');
+  assert.equal(o.cancel_reason, '等候太久');
+  assert.equal(o.cancel_note, '等了 40 分鐘');
+  assert.equal(o.cancel_refund, 90);
+  await page.waitForFunction(() => window.__nativeCalls.filter((c) => c.method === 'print').some((c) => c.params.job.lines[0].text === '*** 訂單取消 ***'));
+
+  // 後台今日訂單：已完成的單也能取消；顯示註記（只操作本測試建立的訂單，不受其他測試資料影響）
+  await addLine(frame, 'tea_jelly', 1);
+  await frame.click('#quickPayBtn');
+  await frame.click('#quickPayNoPrintBtn');
+  await frame.waitForSelector('#lastOrderBar', { state: 'visible' });
+  const no2 = await frame.evaluate(() => lastOrder.order_no);
+  await goAdminOrders(frame);
+  const row1 = `#ordersArea tr[data-order-no="${orderNo}"]`, row2 = `#ordersArea tr[data-order-no="${no2}"]`;
+  await frame.waitForSelector(row1 + ' .cancel-tag');
+  assert.match(await frame.innerText(row1), /客戶取消：等候太久/);
+  await frame.click(row2 + ' .ok-btn');      // 完成
+  await frame.waitForSelector(row2 + ' .badge.completed');
+  assert.equal(await frame.locator(row2 + ' .ok-btn').count(), 0);
+  await frame.click(row2 + ' .danger-btn');  // 取消已完成的單
+  await frame.waitForSelector('#cancelOverlay.show');
+  await frame.click('#cancelOverlay .cancel-type[data-type="store"]');
+  await frame.click('#cancelReasons .cancel-reason >> text=店家缺貨');
+  await frame.click('#cancelConfirmBtn');
+  await frame.waitForSelector(row2 + ' .cancel-tag');
+  assert.match(await frame.innerText(row2), /店家取消：店家缺貨/);
+  assert.equal(JSON.parse(JSON.stringify(h.g.apiLookup(no2))).order.cancel_from, 'completed');
+
+  // 退單分析
+  await frame.click('.admin-subtab >> text=退單分析');
+  await frame.waitForSelector('#cancelStatsArea .cancel-table');
+  const txt = await frame.innerText('#cancelStatsArea');
+  const st = JSON.parse(JSON.stringify(h.g.apiCancelStats('1234', '2000-01-01', '2100-01-01')));
+  assert.ok(st.cancelled >= 2);
+  assert.ok(txt.includes('退單率\n' + JSON.parse(JSON.stringify(h.g.apiCancelStats('1234', await frame.inputValue('#cancelFrom'), await frame.inputValue('#cancelTo')))).rate + '%'));
+  assert.match(txt, /等候太久/);
+  assert.match(txt, /店家缺貨/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('v1.7 取消訂單：叫回的掛單可取消並清空；客戶退單次數顯示在來電與歷史', async () => {
+  const { ctx, page, frame, errors } = await openPos(true);
+  await setPrinter(page);
+  await page.evaluate(() => window.MPOSNative.onEvent('incoming_call', JSON.stringify({ phone: '0933444555' })));
+  await frame.waitForSelector('#callList .call-chip');
+  await frame.locator('#callList .call-chip').first().click({ button: 'right' });
+  await frame.click('#callNewOrderBtn');
+  await frame.waitForSelector('#orderOverlay.show');
+  await frame.click('.item-btn[data-id="custard"]');
+  await frame.click('#pickerDoneBtn');
+  await frame.click('#holdBtn');
+  await frame.click('#quickPayPrintBtn');
+  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('已掛單'));
+  const held = JSON.parse(JSON.stringify(h.g.apiOrders(''))).orders.find((x) => x.customer_phone === '0933444555');
+  await frame.fill('#orderCodeInput', held.order_no);
+  await frame.press('#orderCodeInput', 'Enter');
+  await frame.waitForSelector('#cancelLoadedBtn', { state: 'visible' });
+  await frame.click('#cancelLoadedBtn');
+  await frame.waitForSelector('#cancelOverlay.show');
+  assert.equal(await frame.isVisible('#cancelRefundRow'), false, '未付款不需退款');
+  await frame.click('#cancelOverlay .cancel-type[data-type="customer"]');
+  await frame.click('#cancelReasons .cancel-reason >> text=客戶未取餐');
+  await frame.click('#cancelConfirmBtn');
+  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('已取消'));
+  assert.equal(await frame.evaluate(() => !!loadedOrder || cartItems().length > 0), false);
+  assert.equal(await frame.isVisible('#cancelLoadedBtn'), false);
+
+  // 再次來電：顯示退單次數
+  await page.evaluate(() => window.MPOSNative.onEvent('incoming_call', JSON.stringify({ phone: '0933444555' })));
+  await frame.waitForFunction(() => document.getElementById('callList').innerText.includes('退單1'));
+  await frame.locator('#callList .call-chip').first().click({ button: 'right' });
+  await frame.waitForSelector('#callWarn', { state: 'visible' });
+  assert.match(await frame.innerText('#callWarn'), /退單 1 次/);
+  await frame.click('#callHistoryBtn');
+  await frame.waitForSelector('#infoOverlay.show');
+  assert.match(await frame.innerText('#infoBody'), /退單 1 次（退單率 100%）/);
+  assert.match(await frame.innerText('#infoBody'), /客戶取消：客戶未取餐/);
+  assert.deepEqual(errors, []);
   await ctx.close();
 });

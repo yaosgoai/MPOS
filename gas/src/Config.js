@@ -2,7 +2,7 @@
  * MPOS Cloud - 設定與預設資料
  * 茉莉花鯛魚燒 POS（GAS 管理後台版）
  */
-var APP_VERSION = 'cloud-1.5.0';
+var APP_VERSION = 'cloud-1.7.0';
 var TZ = 'Asia/Taipei';
 
 var DEFAULT_SHOP = {
@@ -27,6 +27,9 @@ var DEFAULT_SETTINGS = {
   print_start_x_mm: '0.00',
   print_start_y_mm: '0.00',
   barcode_max_width_percent: '88',
+  cancel_reasons: '客戶臨時取消\n客戶未取餐\n等候太久\n點錯 / 重複下單\n店家缺貨\n店家忙不過來\n其他',
+  cancel_require_pin: '0',          // 取消訂單是否需要管理密碼
+  barcode_print_mode: 'escstar',    // 條碼列印方式：escstar（ESC * 點陣，相容性最高）/ raster（GS v 0）/ gsk（印表機內建）/ none
   always_print_barcode: '1',
   barcode_number_mode: 'mmdd_seq3',
   barcode_sequence_digits: '3',
@@ -44,7 +47,8 @@ var EDITABLE_SETTING_KEYS = [
   'print_mode', 'paper_width_mm', 'encoding', 'print_darkness', 'line_spacing_percent',
   'print_margin_left_mm', 'print_margin_top_mm', 'print_start_x_mm', 'print_start_y_mm',
   'barcode_max_width_percent', 'always_print_barcode', 'ean13_prefix',
-  'open_cash_drawer', 'cut_paper', 'feed_lines_after', 'barcode_confirm',
+  'open_cash_drawer', 'cut_paper', 'feed_lines_after', 'barcode_confirm', 'barcode_print_mode',
+  'cancel_reasons', 'cancel_require_pin',
 ];
 
 var DEFAULT_MENU_ITEMS = [
@@ -77,12 +81,12 @@ var DEFAULT_ORDER_SOURCES = [
 ];
 
 var DEFAULT_RECEIPT_LAYOUT = [
+  { role: 'order_source', title: '訂單來源（最上方大字）', show: 1, font_pt: 16, weight: 900, align: 'center', x_offset: 0, space_before: 0, space_after: 12 },
   { role: 'barcode', title: 'EAN13單號條碼', show: 1, font_pt: 10, weight: 400, align: 'left', x_offset: 0, space_before: 0, space_after: 4 },
   { role: 'shop_name', title: '店名', show: 1, font_pt: 12, weight: 900, align: 'left', x_offset: 0, space_before: 0, space_after: 2 },
   { role: 'separator', title: '分隔線', show: 1, font_pt: 7, weight: 400, align: 'left', x_offset: 0, space_before: 0, space_after: 0 },
   { role: 'order_no', title: '單號', show: 1, font_pt: 8, weight: 700, align: 'left', x_offset: 0, space_before: 0, space_after: 0 },
   { role: 'time', title: '時間', show: 1, font_pt: 8, weight: 400, align: 'left', x_offset: 0, space_before: 0, space_after: 1 },
-  { role: 'order_source', title: '訂單來源', show: 1, font_pt: 10, weight: 900, align: 'left', x_offset: 0, space_before: 0, space_after: 1 },
   { role: 'customer', title: '客戶（來電）', show: 1, font_pt: 8, weight: 700, align: 'left', x_offset: 0, space_before: 0, space_after: 1 },
   { role: 'item_header', title: '品項標題', show: 1, font_pt: 8, weight: 700, align: 'left', x_offset: 0, space_before: 0, space_after: 0 },
   { role: 'item', title: '品項明細', show: 1, font_pt: 8, weight: 400, align: 'left', x_offset: 0, space_before: 0, space_after: 0 },
@@ -113,7 +117,8 @@ var TABLES = {
       ['total', 'n'], ['note', 's'], ['created_at', 's'], ['printed_at', 's'], ['completed_at', 's'], ['cancelled_at', 's'],
       ['cash_received', 'n'], ['change_amount', 'n'], ['payment_method', 's'],
       ['order_source', 's'], ['client_ref', 's'],
-      ['pay_status', 's'], ['paid_at', 's'], ['customer_name', 's'], ['customer_phone', 's']],
+      ['pay_status', 's'], ['paid_at', 's'], ['customer_name', 's'], ['customer_phone', 's'],
+      ['cancel_type', 's'], ['cancel_reason', 's'], ['cancel_note', 's'], ['cancel_refund', 'n'], ['cancel_from', 's']],
   },
   order_items: { key: 'id', cols: [['id', 'n'], ['order_id', 'n'], ['item_id', 's'], ['name', 's'], ['price', 'n'], ['qty', 'n'], ['subtotal', 'n'], ['note', 's']] },
   receipt_layout: {

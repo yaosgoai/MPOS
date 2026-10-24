@@ -24,6 +24,7 @@ public final class JobParser {
             job.startXMm = p.optDouble("start_x_mm", 0);
             job.startYMm = p.optDouble("start_y_mm", 0);
             job.barcodeMaxWidthPercent = p.optInt("barcode_max_width_percent", 88);
+            job.barcodeMode = p.optString("barcode_mode", "escstar");
             job.openCashDrawer = p.optBoolean("open_cash_drawer", false);
             job.cutPaper = p.optBoolean("cut_paper", true);
             job.feedLinesAfter = p.optInt("feed_lines_after", 3);
@@ -41,6 +42,7 @@ public final class JobParser {
             line.xOffset = l.optInt("x_offset", 0);
             line.spaceBefore = l.optInt("space_before", 0);
             line.spaceAfter = l.optInt("space_after", 0);
+            line.barcodeMode = l.optString("barcode_mode", "");
             job.lines.add(line);
         }
         return job;

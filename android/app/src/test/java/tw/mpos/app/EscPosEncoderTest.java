@@ -48,7 +48,7 @@ public class EscPosEncoderTest {
     @Test
     public void encodeReceiptFromGasJson() throws Exception {
         String json = "{\"order_no\":\"202607040001\",\"ean13\":\"2000007040014\","
-                + "\"printer\":{\"paper_width_mm\":58,\"encoding\":\"big5\",\"darkness\":\"dark\",\"line_spacing_percent\":100,"
+                + "\"printer\":{\"paper_width_mm\":58,\"encoding\":\"big5\",\"darkness\":\"dark\",\"barcode_mode\":\"raster\",\"line_spacing_percent\":100,"
                 + "\"open_cash_drawer\":true,\"cut_paper\":true,\"feed_lines_after\":3,\"margin_left_mm\":4},"
                 + "\"lines\":[{\"role\":\"barcode\",\"text\":\"\",\"align\":\"center\"},"
                 + "{\"role\":\"shop_name\",\"text\":\"茉莉花鯛魚燒\",\"font_pt\":16,\"bold\":true,\"align\":\"left\"},"
@@ -68,6 +68,41 @@ public class EscPosEncoderTest {
         assertTrue(indexOf(out, new byte[]{0x1D, 0x56, 0x00}) > 0);                  // 切紙
         byte[] drawer = EscPosEncoder.cashDrawerCommand();
         assertArrayEquals(drawer, Arrays.copyOfRange(out, out.length - drawer.length, out.length));
+    }
+
+    private static PrintJob barcodeJob(String mode) throws Exception {
+        String json = "{\"order_no\":\"202607040001\",\"ean13\":\"2000007040014\",\"printer\":{\"paper_width_mm\":58,\"encoding\":\"big5\""
+                + (mode == null ? "" : ",\"barcode_mode\":\"" + mode + "\"") + "},"
+                + "\"lines\":[{\"role\":\"order_source\",\"text\":\"【來電點餐】\",\"font_pt\":16,\"bold\":true,\"align\":\"center\"},"
+                + "{\"role\":\"barcode\",\"text\":\"\",\"align\":\"center\"}]}";
+        return JobParser.parse(new JSONObject(json));
+    }
+
+    @Test
+    public void defaultBarcodeUsesEscStarBitImageOutsideKanjiMode() throws Exception {
+        byte[] out = EscPosEncoder.encode(barcodeJob(null));
+        int img = indexOf(out, new byte[]{0x1B, 0x2A, 33});
+        assertTrue("ESC * 33 點陣條碼", img > 0);
+        assertEquals("不使用 GS v 0", -1, indexOf(out, new byte[]{0x1D, 0x76, 0x30, 0x00}));
+        int fsDot = indexOf(out, new byte[]{0x1C, 0x2E});
+        assertTrue("圖片前先離開漢字模式", fsDot > 0 && fsDot < img);
+        int src = indexOf(out, "【來電點餐】".getBytes(EscPosEncoder.charsetFor("big5")));
+        assertTrue("來源在條碼之前", src > 0 && src < img);
+        // 3 段 × 每段 ESC * 33 nL nH + 欄數 × 3
+        int width = (out[img + 3] & 0xFF) | ((out[img + 4] & 0xFF) << 8);
+        assertTrue(width > 0 && width <= 384);
+    }
+
+    @Test
+    public void nativeBarcodeMode() throws Exception {
+        byte[] out = EscPosEncoder.encode(barcodeJob("gsk"));
+        int k = indexOf(out, new byte[]{0x1D, 0x6B, 67, 12});
+        assertTrue("GS k EAN13", k > 0);
+        assertEquals("200000704001", new String(Arrays.copyOfRange(out, k + 4, k + 16), "US-ASCII"));
+        assertEquals(-1, indexOf(out, new byte[]{0x1B, 0x2A, 33}));
+        byte[] none = EscPosEncoder.encode(barcodeJob("none"));
+        assertEquals(-1, indexOf(none, new byte[]{0x1B, 0x2A, 33}));
+        assertEquals(-1, indexOf(none, new byte[]{0x1D, 0x76, 0x30, 0x00}));
     }
 
     @Test

@@ -260,13 +260,15 @@ function apiRecentCalls() {
     var today = todayText_();
     var custMap = {};
     readTable_('customers').forEach(function (c) { custMap[c.phone] = c; });
-    var byPhone = {}, list = [];
+    var byPhone = {}, list = [], cancelCnt = {};
+    readTable_('orders').forEach(function (o) { if (o.customer_phone && o.status === 'cancelled') cancelCnt[o.customer_phone] = (cancelCnt[o.customer_phone] || 0) + 1; });
     readTable_('calls').filter(function (c) { return String(c.called_at).indexOf(today) === 0; })
       .sort(function (a, b) { return b.id - a.id; })
       .forEach(function (c) {
         if (byPhone[c.phone]) { byPhone[c.phone].count_today++; return; }
         var cu = custMap[c.phone] || {};
-        byPhone[c.phone] = { phone: c.phone, phone_display: formatPhone(c.phone), name: cu.name || '', called_at: c.called_at, count_today: 1, call_count: Number(cu.call_count) || 1 };
+        byPhone[c.phone] = { phone: c.phone, phone_display: formatPhone(c.phone), name: cu.name || '', called_at: c.called_at, count_today: 1, call_count: Number(cu.call_count) || 1,
+          cancel_count: cancelCnt[c.phone] || 0 };
         list.push(byPhone[c.phone]);
       });
     return { calls: list.slice(0, 30) };
@@ -279,13 +281,18 @@ function apiCallLog(date) {
     var d = normalizeQueryDate_(date);
     var custMap = {}, orderCnt = {};
     readTable_('customers').forEach(function (c) { custMap[c.phone] = c; });
-    readTable_('orders').forEach(function (o) { if (o.customer_phone && o.status !== 'cancelled') orderCnt[o.customer_phone] = (orderCnt[o.customer_phone] || 0) + 1; });
+    var cancelCnt = {};
+    readTable_('orders').forEach(function (o) {
+      if (!o.customer_phone) return;
+      if (o.status !== 'cancelled') orderCnt[o.customer_phone] = (orderCnt[o.customer_phone] || 0) + 1;
+      else cancelCnt[o.customer_phone] = (cancelCnt[o.customer_phone] || 0) + 1;
+    });
     var list = readTable_('calls').filter(function (c) { return String(c.called_at).indexOf(d) === 0; })
       .sort(function (a, b) { return b.id - a.id; })
       .map(function (c) {
         var cu = custMap[c.phone] || {};
         return { id: c.id, phone: c.phone, phone_display: formatPhone(c.phone), name: cu.name || '', called_at: c.called_at,
-          call_count: Number(cu.call_count) || 1, order_count: orderCnt[c.phone] || 0 };
+          call_count: Number(cu.call_count) || 1, order_count: orderCnt[c.phone] || 0, cancel_count: cancelCnt[c.phone] || 0 };
       });
     return { date: d, calls: list };
   });
@@ -316,6 +323,7 @@ function apiCustomerHistory(phoneInput) {
     return {
       customer: cust ? decorateCustomer_(cust) : { phone: phone, phone_display: formatPhone(phone), name: '', call_count: 0 },
       orders: list, order_count: orders.length, top_items: top,
+      cancel: customerCancelInfo_(phone, orders),
     };
   });
 }
@@ -418,14 +426,60 @@ function apiCompleteOrder(orderId) {
   });
 }
 
-function apiCancelOrder(orderId) {
+/**
+ * 取消訂單（含註記）：input = {order_id, type: customer|store, reason, note, refund, print, pin}
+ * 已完成 / 已付款的訂單也可取消；取消後保留原狀態（cancel_from）供分析。
+ */
+function apiCancelOrder(input) {
   return wrap_(function () {
-    var o = findOrderById_(orderId);
-    if (!o) throw new Error('找不到訂單。');
-    if (o.status === 'completed') throw new Error('已完成的訂單不建議取消。');
-    updateFields_('orders', orderId, { status: 'cancelled', cancelled_at: nowText_() });
-    return { message: '訂單已取消' };
+    if (input === null || typeof input !== 'object') input = { order_id: input };
+    var st = getStatic_();
+    if (truthy_(st.settings.cancel_require_pin)) requirePin_(input.pin);
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      var o = findOrderById_(input.order_id);
+      if (!o) throw new Error('找不到訂單。');
+      if (o.status === 'cancelled') throw new Error('此訂單已經取消（' + (o.cancel_reason || '') + '）。');
+      var c = normalizeCancelInput(input, o);
+      var fields = { status: 'cancelled', cancelled_at: nowText_(), cancel_type: c.type, cancel_reason: c.reason,
+        cancel_note: c.note, cancel_refund: c.refund, cancel_from: o.status };
+      updateFields_('orders', o.id, fields);
+    } finally { lock.releaseLock(); }
+    var order = getOrderWithItems_(findOrderById_(input.order_id));
+    return {
+      message: '訂單 ' + order.order_no + ' 已取消（' + CANCEL_TYPES[order.cancel_type] + '：' + order.cancel_reason + '）' +
+        (Number(order.cancel_refund) > 0 ? '，退款 ' + order.cancel_refund + ' 元' : ''),
+      order: order,
+      print_job: input.print ? buildCancelPrintJob(order, st.settings, st.layout) : null,
+    };
   });
+}
+
+/** 退單分析：期間（from ~ to，含）內的訂單取消統計 */
+function apiCancelStats(pin, from, to) {
+  return wrap_(function () {
+    requirePin_(pin);
+    var t = normalizeQueryDate_(to || todayText_());
+    var f = normalizeQueryDate_(from || t);
+    if (f > t) { var x = f; f = t; t = x; }
+    var custMap = {};
+    readTable_('customers').forEach(function (c) { custMap[c.phone] = c; });
+    var orders = readTable_('orders').filter(function (o) { return o.order_date >= f && o.order_date <= t; });
+    var res = cancelStats(orders, custMap);
+    res.from = f; res.to = t;
+    res.recent = orders.filter(function (o) { return o.status === 'cancelled'; })
+      .sort(function (a, b) { return String(b.cancelled_at).localeCompare(String(a.cancelled_at)); })
+      .slice(0, 50).map(strip_);
+    return res;
+  });
+}
+
+/** 某客戶的訂單 / 取消筆數 */
+function customerCancelInfo_(phone, orders) {
+  var mine = (orders || readTable_('orders')).filter(function (o) { return o.customer_phone === phone; });
+  var cancelled = mine.filter(function (o) { return o.status === 'cancelled'; }).length;
+  return { order_total: mine.length, cancel_count: cancelled, cancel_rate: pct_(cancelled, mine.length) };
 }
 
 function apiReprintJob(orderId) {
@@ -454,7 +508,18 @@ function apiTestPrintJob(barcodeOnly) {
     };
     var job = buildPrintJob(order, st.settings, st.layout);
     job.printer.open_cash_drawer = false;
-    if (barcodeOnly) {
+    if (barcodeOnly === 'modes') {
+      // 條碼相容性測試：三種方式各印一次，選印得出條碼（不是亂碼）的那一種
+      var base = { font_pt: 8, bold: true, align: 'left', x_offset: 0, space_before: 0, space_after: 0 };
+      var lbl = function (t) { return Object.assign({ role: 'item', text: t }, base); };
+      var bc = function (m) { return { role: 'barcode', text: '', barcode_mode: m, font_pt: 8, bold: false, align: 'center', x_offset: 0, space_before: 0, space_after: 12 }; };
+      job.lines = [lbl('條碼相容性測試 EAN13：' + job.ean13),
+        lbl('方式 1：ESC * 點陣（建議）'), bc('escstar'),
+        lbl('方式 2：GS v 0 點陣'), bc('raster'),
+        lbl('方式 3：印表機內建條碼'), bc('gsk'),
+        lbl('請到設定選擇印得正常的方式')];
+      job.preview = job.lines.map(function (l) { return l.role === 'barcode' ? '‖‖‖ 條碼（' + l.barcode_mode + '）‖‖‖' : l.text; }).join('\n');
+    } else if (barcodeOnly) {
       job.lines = job.lines.filter(function (l) { return l.role === 'barcode' || l.role === 'order_no'; });
       job.lines.push({ role: 'item', text: '條碼：' + order.barcode_no + '  EAN13：' + job.ean13, font_pt: 8, bold: false, align: 'left', x_offset: 0, space_before: 0, space_after: 0 });
     }
@@ -622,7 +687,7 @@ function apiDbInfo(pin) {
 /** 可經由 HTTP doPost 呼叫的函式白名單 */
 var HTTP_API = {
   apiBootstrap: apiBootstrap, apiPreview: apiPreview, apiCreateOrder: apiCreateOrder, apiMarkPrinted: apiMarkPrinted,
-  apiOrders: apiOrders, apiCompleteOrder: apiCompleteOrder, apiCancelOrder: apiCancelOrder, apiReprintJob: apiReprintJob,
+  apiOrders: apiOrders, apiCompleteOrder: apiCompleteOrder, apiReprintJob: apiReprintJob,
   apiTestPrintJob: apiTestPrintJob, apiLookup: apiLookup, apiVerifyPin: apiVerifyPin, apiLoadOrder: apiLoadOrder,
 };
 

@@ -133,11 +133,14 @@ function sanitizeReceiptLayout(rows) {
   });
   var result = DEFAULT_RECEIPT_LAYOUT.map(function (def, idx) {
     var src = byRole[def.role] || {};
+    // v1.6：訂單來源改到最上方大字置中；舊版預設值（10pt 靠左）自動升級，使用者自訂過的保留
+    if (def.role === 'order_source' && src.role && String(src.title || '') === '訂單來源' &&
+        Number(src.font_pt) === 10 && String(src.align || 'left') === 'left') src = { show: src.show };
     var r = {};
     Object.keys(def).forEach(function (k) { r[k] = (src[k] !== undefined && src[k] !== '' && src[k] !== null) ? src[k] : def[k]; });
     r.role = def.role;
     r.title = String(r.title || def.title).trim();
-    r.sort_order = safeInt_(src.sort_order, idx * 10, 0, 9999);
+    r.sort_order = def.role === 'order_source' ? 0 : safeInt_(src.sort_order, idx * 10, 0, 9999);
     r.show = truthy_(r.show) ? 1 : 0;
     r.font_pt = safeInt_(r.font_pt, def.font_pt, 6, 24);
     var w = safeInt_(r.weight, def.weight, 300, 900);
@@ -173,6 +176,8 @@ function padLeft_(v, n) {
  * order: {order_no, barcode_no, created_at, items:[{name,price,qty}], note, cash_received, change_amount, payment_method}
  * 回傳 {lines:[{role,text}], total}
  */
+var BARCODE_PRINT_MODES = ['escstar', 'raster', 'gsk', 'none'];
+
 function buildReceiptLines(order, settings) {
   settings = settings || DEFAULT_SETTINGS;
   var W = receiptWidthChars(settings);
@@ -181,12 +186,12 @@ function buildReceiptLines(order, settings) {
   var add = function (role, text) { lines.push({ role: role, text: String(text) }); };
   var total = 0;
 
+  if (order.order_source) add('order_source', '【' + order.order_source + '】');   // 最上方大字，方便排單辨識
   add('barcode', '__BARCODE_EAN13__');
   add('shop_name', settings.shop_name || DEFAULT_SHOP.shop_name);
   add('separator', eq);
   add('order_no', '單號：' + order.order_no);
   add('time', '時間：' + (order.created_at || ''));
-  if (order.order_source) add('order_source', '來源：' + order.order_source);
   if (order.customer_name || order.customer_phone) {
     add('customer', '客戶：' + [order.customer_name || '', formatPhone(order.customer_phone)].join(' ').trim());
   }
@@ -286,6 +291,7 @@ function buildPrintJob(order, settings, layoutRows) {
       start_x_mm: parseFloat(settings.print_start_x_mm) || 0,
       start_y_mm: parseFloat(settings.print_start_y_mm) || 0,
       barcode_max_width_percent: safeInt_(settings.barcode_max_width_percent, 88, 50, 100),
+      barcode_mode: BARCODE_PRINT_MODES.indexOf(String(settings.barcode_print_mode)) >= 0 ? String(settings.barcode_print_mode) : 'escstar',
       open_cash_drawer: truthy_(settings.open_cash_drawer),
       cut_paper: truthy_(settings.cut_paper === undefined ? '1' : settings.cut_paper),
       feed_lines_after: safeInt_(settings.feed_lines_after, 3, 0, 10),
@@ -293,6 +299,103 @@ function buildPrintJob(order, settings, layoutRows) {
     lines: lines,
     preview: receiptPreviewText(built.lines),
   };
+}
+
+/* ---------------- 取消訂單 / 退單分析 ---------------- */
+
+var CANCEL_TYPES = { customer: '客戶取消', store: '店家取消' };
+
+/** 取消原因清單（設定內每行一個，去重，最多 20 個、每個 20 字） */
+function parseCancelReasons(text) {
+  var seen = {}, out = [];
+  String(text === undefined || text === null ? '' : text).split(/[\r\n,，、]+/).forEach(function (x) {
+    x = x.trim().substring(0, 20);
+    if (x && !seen[x] && out.length < 20) { seen[x] = 1; out.push(x); }
+  });
+  return out;
+}
+
+function isPaidOrder_(o) { return String(o.pay_status || 'paid') !== 'unpaid'; }
+
+/** 驗證取消資料：類型、原因必填；已付款訂單預設全額退款 */
+function normalizeCancelInput(input, order) {
+  input = input || {};
+  var type = String(input.type || '').trim();
+  if (!CANCEL_TYPES[type]) throw new Error('請選擇取消類型（客戶取消 / 店家取消）。');
+  var reason = String(input.reason || '').trim().substring(0, 30);
+  if (!reason) throw new Error('請選擇或輸入取消原因。');
+  var note = String(input.note || '').trim().substring(0, 100);
+  var total = Number(order.total) || 0;
+  var refund = 0;
+  if (isPaidOrder_(order)) {
+    refund = (input.refund === undefined || input.refund === null || input.refund === '') ? total : parseInt(input.refund, 10);
+    if (isNaN(refund) || refund < 0 || refund > total) throw new Error('退款金額需在 0 到 ' + total + ' 元之間。');
+  }
+  return { type: type, reason: reason, note: note, refund: refund };
+}
+
+/** 取消單（給廚房 / 排單用） */
+function buildCancelPrintJob(order, settings, layoutRows) {
+  var job = buildPrintJob(order, settings, layoutRows);
+  var W = receiptWidthChars(settings), dash = repeatChar_('-', W);
+  var L = function (text, opt) {
+    return Object.assign({ role: 'item', text: String(text), font_pt: 8, bold: false, align: 'left', x_offset: 0, space_before: 0, space_after: 0 }, opt || {});
+  };
+  var lines = [L('*** 訂單取消 ***', { role: 'order_source', font_pt: 16, bold: true, align: 'center', space_after: 12 }),
+    L('單號：' + order.order_no, { bold: true })];
+  if (order.order_source) lines.push(L('來源：' + order.order_source));
+  if (order.customer_name || order.customer_phone) lines.push(L('客戶：' + [order.customer_name || '', formatPhone(order.customer_phone)].join(' ').trim()));
+  lines.push(L(dash));
+  (order.items || []).forEach(function (i) { lines.push(L(i.name + ' x ' + i.qty)); });
+  lines.push(L(dash));
+  lines.push(L((CANCEL_TYPES[order.cancel_type] || '取消') + '：' + (order.cancel_reason || ''), { bold: true }));
+  if (order.cancel_note) lines.push(L('說明：' + order.cancel_note));
+  if (Number(order.cancel_refund) > 0) lines.push(L('退款：' + order.cancel_refund + ' 元', { bold: true }));
+  lines.push(L('取消時間：' + (order.cancelled_at || '')));
+  job.lines = lines;
+  job.ean13 = '';
+  job.printer.open_cash_drawer = Number(order.cancel_refund) > 0 && truthy_(settings.open_cash_drawer);
+  job.preview = lines.map(function (l) { return l.text; }).join('\n');
+  return job;
+}
+
+function pct_(a, b) { return b ? Math.round(a / b * 1000) / 10 : 0; }
+
+/**
+ * 退單分析（純函式）。orders：期間內所有訂單；custMap：phone → 客戶。
+ * 退單率 = 取消筆數 / 總筆數。
+ */
+function cancelStats(orders, custMap) {
+  custMap = custMap || {};
+  var res = { total: 0, cancelled: 0, rate: 0, cancel_amount: 0, refund: 0, by_type: [], by_reason: [], by_source: [], by_customer: [], by_date: [] };
+  var tA = {}, rA = {}, sA = {}, cA = {}, dA = {};
+  var bump = function (map, key, extra) { return map[key] || (map[key] = Object.assign({ name: key, orders: 0, cancelled: 0, amount: 0 }, extra || {})); };
+  (orders || []).forEach(function (o) {
+    var c = o.status === 'cancelled', amt = Number(o.total) || 0;
+    res.total++;
+    var s = bump(sA, o.order_source || '未指定'); s.orders++;
+    var d = bump(dA, o.order_date || String(o.created_at || '').substring(0, 10)); d.orders++;
+    var cu = null;
+    if (o.customer_phone) { cu = bump(cA, o.customer_phone, { phone: o.customer_phone }); cu.orders++; }
+    if (!c) return;
+    res.cancelled++; res.cancel_amount += amt; res.refund += Number(o.cancel_refund) || 0;
+    s.cancelled++; s.amount += amt; d.cancelled++; d.amount += amt;
+    if (cu) { cu.cancelled++; cu.amount += amt; }
+    var t = bump(tA, CANCEL_TYPES[o.cancel_type] || '未註記'); t.cancelled++; t.amount += amt;
+    var r = bump(rA, o.cancel_reason || '未註記原因'); r.cancelled++; r.amount += amt;
+  });
+  var list = function (m) { return Object.keys(m).map(function (k) { var x = m[k]; x.rate = pct_(x.cancelled, x.orders); return x; }); };
+  res.rate = pct_(res.cancelled, res.total);
+  res.by_type = list(tA).sort(function (a, b) { return b.cancelled - a.cancelled; });
+  res.by_reason = list(rA).map(function (x) { x.share = pct_(x.cancelled, res.cancelled); return x; }).sort(function (a, b) { return b.cancelled - a.cancelled; });
+  res.by_source = list(sA).sort(function (a, b) { return b.rate - a.rate || b.cancelled - a.cancelled; });
+  res.by_date = list(dA).sort(function (a, b) { return a.name < b.name ? -1 : 1; });
+  res.by_customer = list(cA).filter(function (x) { return x.cancelled > 0; }).map(function (x) {
+    var cu = custMap[x.phone] || {};
+    x.customer_name = cu.name || ''; x.phone_display = formatPhone(x.phone);
+    return x;
+  }).sort(function (a, b) { return b.cancelled - a.cancelled || b.rate - a.rate; }).slice(0, 50);
+  return res;
 }
 
 /* ---------------- 設定驗證 ---------------- */
@@ -305,6 +408,7 @@ function validateSettings(input) {
   if (clean.print_mode !== undefined && ['bluetooth', 'browser', 'none'].indexOf(clean.print_mode) < 0) throw new Error('列印模式必須是 bluetooth、browser 或 none。');
   if (clean.paper_width_mm !== undefined && ['58', '80'].indexOf(clean.paper_width_mm) < 0) throw new Error('紙寬只支援 58 或 80 mm。');
   if (clean.encoding !== undefined && ['big5', 'cp950', 'gbk', 'gb18030', 'utf-8'].indexOf(clean.encoding.toLowerCase()) < 0) throw new Error('中文編碼不支援：' + clean.encoding);
+  if (clean.barcode_print_mode !== undefined && BARCODE_PRINT_MODES.indexOf(String(clean.barcode_print_mode)) < 0) throw new Error('條碼列印方式錯誤。');
   if (clean.print_darkness !== undefined && ['light', 'normal', 'dark', 'extra_dark'].indexOf(clean.print_darkness) < 0) throw new Error('列印濃度錯誤。');
   if (clean.line_spacing_percent !== undefined) {
     var ls = parseInt(clean.line_spacing_percent, 10);
@@ -328,7 +432,12 @@ function validateSettings(input) {
     clean.ean13_prefix = p;
   }
   if (clean.feed_lines_after !== undefined) clean.feed_lines_after = String(safeInt_(clean.feed_lines_after, 3, 0, 10));
-  ['always_print_barcode', 'open_cash_drawer', 'cut_paper', 'barcode_confirm'].forEach(function (k) {
+  if (clean.cancel_reasons !== undefined) {
+    var rs = parseCancelReasons(clean.cancel_reasons);
+    if (!rs.length) throw new Error('取消原因至少要有一個。');
+    clean.cancel_reasons = rs.join('\n');
+  }
+  ['always_print_barcode', 'open_cash_drawer', 'cut_paper', 'barcode_confirm', 'cancel_require_pin'].forEach(function (k) {
     if (clean[k] !== undefined) clean[k] = truthy_(clean[k]) ? '1' : '0';
   });
   if (clean.shop_name !== undefined && !clean.shop_name) throw new Error('店名不可空白。');

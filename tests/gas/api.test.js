@@ -109,9 +109,11 @@ test('查詢、完成、取消、補印', () => {
   assert.equal(rp.print_job.order_no, '202607040001');
 
   assert.equal(g.apiCompleteOrder(o.id).ok, true);
-  assert.match(g.apiCancelOrder(o.id).message, /已完成/);
   const o2 = plain(g.apiCreateOrder({ order_source: '現場點餐', items: [{ id: 'cheese', qty: 1 }], print: false })).order;
-  assert.equal(g.apiCancelOrder(o2.id).ok, true);
+  assert.match(g.apiCancelOrder(o2.id).message, /取消類型/, '沒有註記不能取消');
+  assert.match(g.apiCancelOrder({ order_id: o2.id, type: 'customer' }).message, /取消原因/);
+  assert.equal(g.apiCancelOrder({ order_id: o2.id, type: 'customer', reason: '客戶臨時取消' }).ok, true);
+  assert.match(g.apiCancelOrder({ order_id: o2.id, type: 'customer', reason: 'x' }).message, /已經取消/);
   assert.match(g.apiCompleteOrder(o2.id).message, /已取消/);
   const sum = plain(g.apiOrders('2026-07-04')).summary;
   assert.equal(sum.by_status.completed.cnt, 1);
@@ -172,6 +174,21 @@ test('HTTP 入口：health 與 doPost 白名單', () => {
   assert.equal(post({ fn: 'setup' }).ok, false);
 });
 
+test('單據版型：訂單來源升級為最上方大字置中（舊預設自動升級，自訂保留）', () => {
+  const g = fresh(() => new Date('2026-07-04T02:00:00Z'));
+  const old = [{ role: 'barcode', title: 'EAN13單號條碼', sort_order: 0 }, { role: 'order_source', title: '訂單來源', show: 1, font_pt: 10, weight: 900, align: 'left', sort_order: 50 }];
+  const up = plain(g.sanitizeReceiptLayout(old));
+  assert.equal(up[0].role, 'order_source');
+  assert.equal(up[0].font_pt, 16);
+  assert.equal(up[0].align, 'center');
+  const custom = plain(g.sanitizeReceiptLayout([{ role: 'order_source', title: '來源', font_pt: 20, align: 'left' }]));
+  assert.equal(custom[0].font_pt, 20);
+  assert.equal(plain(g.apiSaveSettings('1234', { barcode_print_mode: 'gsk' })).settings.barcode_print_mode, 'gsk');
+  assert.match(g.apiSaveSettings('1234', { barcode_print_mode: 'xx' }).message, /條碼列印方式/);
+  const t = plain(g.apiTestPrintJob('modes'));
+  assert.deepEqual(t.print_job.lines.filter((l) => l.role === 'barcode').map((l) => l.barcode_mode), ['escstar', 'raster', 'gsk']);
+});
+
 test('訂單來源：必填、需為啟用中的來源、印在單據並寫入訂單與統計', () => {
   const g = fresh(() => new Date('2026-07-04T02:00:00Z'));
   assert.match(g.apiCreateOrder({ items: [{ id: 'cheese', qty: 1 }], print: false }).message, /訂單來源/);
@@ -180,8 +197,11 @@ test('訂單來源：必填、需為啟用中的來源、印在單據並寫入�
   assert.equal(r.ok, true, r.message);
   assert.equal(r.order.order_source, 'Uber點餐');
   const lines = r.print_job.lines.map((l) => l.role + '|' + l.text);
-  assert.ok(lines.includes('order_source|來源：Uber點餐'));
-  assert.ok(lines.indexOf('order_source|來源：Uber點餐') > lines.findIndex((x) => x.startsWith('time|')));
+  assert.equal(lines[0], 'order_source|【Uber點餐】', '訂單來源在最上方');
+  const src = r.print_job.lines.find((l) => l.role === 'order_source');
+  assert.equal(src.font_pt, 16);
+  assert.equal(src.align, 'center');
+  assert.equal(r.print_job.printer.barcode_mode, 'escstar');
   plain(g.apiCreateOrder({ order_source: '來電點餐', items: [{ id: 'custard', qty: 1 }], print: false }));
   const sum = plain(g.apiOrders('2026-07-04')).summary;
   assert.deepEqual(sum.by_source.map((x) => [x.name, x.cnt, x.amount]), [['Uber點餐', 1, 90], ['來電點餐', 1, 45]]);
@@ -313,4 +333,81 @@ test('來電記錄：指定日期逐筆列出、附名稱與訂單數', () => {
   const d4 = plain(g.apiCallLog('2026-07-04'));
   assert.deepEqual(d4.calls.map((c) => [c.phone, c.name, c.order_count]), [['0912345678', '王先生', 1], ['0422223333', '', 0], ['0912345678', '王先生', 1]]);
   assert.equal(plain(g.apiCallLog('2026/07/05')).calls.length, 1);
+});
+
+test('取消訂單：註記類型 / 原因 / 說明 / 退款，已完成也可取消，可列印取消單，需要時要密碼', () => {
+  const g = fresh(() => new Date('2026-07-04T02:00:00Z'));
+  const paid = plain(g.apiCreateOrder({ order_source: '來電點餐', customer_phone: '0910670803', customer_name: '王先生', items: [{ id: 'custard', qty: 2 }], print: false, cash_received: 100 })).order;
+  g.apiCompleteOrder(paid.id);
+  assert.match(g.apiCancelOrder({ order_id: paid.id, type: 'customer', reason: '等候太久', refund: 999 }).message, /退款金額/);
+  const r = plain(g.apiCancelOrder({ order_id: paid.id, type: 'customer', reason: '等候太久', note: '等了 40 分鐘', print: true }));
+  assert.equal(r.ok, true, r.message);
+  assert.equal(r.order.status, 'cancelled');
+  assert.equal(r.order.cancel_from, 'completed');
+  assert.equal(r.order.cancel_type, 'customer');
+  assert.equal(r.order.cancel_reason, '等候太久');
+  assert.equal(r.order.cancel_note, '等了 40 分鐘');
+  assert.equal(r.order.cancel_refund, 90, '已付款預設全額退款');
+  assert.match(r.message, /退款 90 元/);
+  const texts = r.print_job.lines.map((l) => l.text);
+  assert.equal(texts[0], '*** 訂單取消 ***');
+  assert.ok(texts.includes('客戶取消：等候太久'));
+  assert.ok(texts.includes('退款：90 元'));
+  assert.ok(!r.print_job.lines.some((l) => l.role === 'barcode'));
+
+  // 掛單（未付款）取消：不退款
+  const hold = plain(g.apiCreateOrder({ order_source: '現場點餐', items: [{ id: 'cheese', qty: 1 }], hold: true, print: false })).order;
+  const r2 = plain(g.apiCancelOrder({ order_id: hold.id, type: 'store', reason: '店家缺貨', refund: 50 }));
+  assert.equal(r2.order.cancel_refund, 0);
+  assert.equal(r2.print_job, null);
+
+  // 設定「取消需要密碼」
+  plain(g.apiSaveSettings('1234', { cancel_require_pin: '1', cancel_reasons: '客戶臨時取消\n其他\n其他' }));
+  assert.equal(plain(g.apiBootstrap()).settings.cancel_reasons, '客戶臨時取消\n其他');
+  const o3 = plain(g.apiCreateOrder({ order_source: '現場點餐', items: [{ id: 'cheese', qty: 1 }], print: false })).order;
+  assert.match(g.apiCancelOrder({ order_id: o3.id, type: 'store', reason: '其他' }).message, /密碼/);
+  assert.equal(g.apiCancelOrder({ order_id: o3.id, type: 'store', reason: '其他', pin: '1234' }).ok, true);
+  assert.match(g.apiSaveSettings('1234', { cancel_reasons: '  ' }).message, /至少/);
+});
+
+test('退單分析：退單率、依原因 / 類型 / 來源 / 客戶 / 日期；客戶歷史與來電顯示退單次數', () => {
+  let now = new Date('2026-07-03T02:00:00Z');
+  const g = fresh(() => now);
+  const mk = (src, phone, cancel) => {
+    const o = plain(g.apiCreateOrder({ order_source: src, customer_phone: phone, items: [{ id: 'custard', qty: 1 }], print: false, cash_received: 45 })).order;
+    if (cancel) assert.equal(g.apiCancelOrder(Object.assign({ order_id: o.id }, cancel)).ok, true);
+    return o;
+  };
+  mk('來電點餐', '0910670803', { type: 'customer', reason: '客戶未取餐' });
+  mk('現場點餐', '', null);
+  now = new Date('2026-07-04T02:00:00Z');
+  mk('來電點餐', '0910670803', { type: 'customer', reason: '客戶未取餐' });
+  mk('來電點餐', '0910670803', null);
+  mk('Uber點餐', '', { type: 'store', reason: '店家缺貨' });
+  mk('現場點餐', '0922333444', null);
+  g.apiSaveCustomer('0910670803', '王先生');
+
+  assert.match(g.apiCancelStats('0000', '2026-07-01', '2026-07-04').message, /密碼/);
+  const s = plain(g.apiCancelStats('1234', '2026-07-04', '2026-07-01'));
+  assert.equal(s.from, '2026-07-01');
+  assert.equal(s.total, 6);
+  assert.equal(s.cancelled, 3);
+  assert.equal(s.rate, 50);
+  assert.equal(s.cancel_amount, 135);
+  assert.equal(s.refund, 135);
+  assert.deepEqual(s.by_reason.map((x) => [x.name, x.cancelled, x.share]), [['客戶未取餐', 2, 66.7], ['店家缺貨', 1, 33.3]]);
+  assert.deepEqual(s.by_type.map((x) => [x.name, x.cancelled]), [['客戶取消', 2], ['店家取消', 1]]);
+  const src = Object.fromEntries(s.by_source.map((x) => [x.name, [x.orders, x.cancelled, x.rate]]));
+  assert.deepEqual(src['來電點餐'], [3, 2, 66.7]);
+  assert.deepEqual(src['Uber點餐'], [1, 1, 100]);
+  assert.deepEqual(s.by_customer.map((x) => [x.phone, x.customer_name, x.orders, x.cancelled, x.rate]), [['0910670803', '王先生', 3, 2, 66.7]]);
+  assert.deepEqual(s.by_date.map((x) => [x.name, x.orders, x.cancelled]), [['2026-07-03', 2, 1], ['2026-07-04', 4, 2]]);
+  assert.equal(s.recent.length, 3);
+  assert.equal(plain(g.apiCancelStats('1234', '2026-07-04', '2026-07-04')).total, 4);
+
+  const h = plain(g.apiCustomerHistory('0910670803'));
+  assert.deepEqual(h.cancel, { order_total: 3, cancel_count: 2, cancel_rate: 66.7 });
+  g.apiRegisterCall('0910670803');
+  assert.equal(plain(g.apiRecentCalls()).calls[0].cancel_count, 2);
+  assert.equal(plain(g.apiCallLog('2026-07-04')).calls[0].cancel_count, 2);
 });

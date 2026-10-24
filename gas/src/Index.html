@@ -38,6 +38,7 @@
             <h2 class="section-title pos-title">目前訂單</h2>
             <button type="button" id="sourceBar" class="source-chip" style="display:none" onclick="openSourcePicker(false)" title="點一下變更訂單來源"><b id="sourceName"></b><span class="chg">變更</span></button>
             <span id="loadedOrderTag" class="loaded-tag" style="display:none"></span>
+            <button type="button" id="cancelLoadedBtn" class="small-btn danger-btn" style="display:none" onclick="cancelLoadedOrder()">取消此單</button>
           </div>
           <span id="draftState" class="draft-state"></span>
         </div>
@@ -55,6 +56,7 @@
       </div>
       <div class="pos-scroll" id="posScroll">
       <div id="cartArea" class="cart-empty">尚未點選商品，請按「＋新購」</div>
+      <div id="lastOrderBar" class="last-order-bar" style="display:none"></div>
       <div id="posMsg" class="message"></div>
       <div id="receiptPreview" class="receipt-preview"></div>
       </div>
@@ -146,6 +148,7 @@
       <div class="checkout-title" id="callTitle">來電</div>
       <button class="checkout-close" onclick="closeCallMenu()">關閉</button>
     </div>
+    <div id="callWarn" class="cancel-warn-box" style="display:none"></div>
     <div class="field-grid call-name-row" data-noscan>
       <div style="grid-column:1/-1"><label>客戶名稱（可空白，之後再補）</label><input id="callNameInput" maxlength="30" placeholder="例如：王先生"></div>
     </div>
@@ -163,6 +166,34 @@
       <button id="callNewOrderBtn" class="source-btn" onclick="callNewOrder()">1. 直接新增來電點餐</button>
       <button id="callHistoryBtn" class="source-btn" onclick="callShowHistory()">2. 查詢歷史交易品項</button>
       <button class="main-btn gray-btn" onclick="callSaveName()">只儲存客戶名稱</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 取消訂單（含註記：誰取消、原因、說明、退款） ================= -->
+<div id="cancelOverlay" class="checkout-overlay">
+  <div class="checkout-modal cancel-modal">
+    <div class="checkout-head">
+      <div class="checkout-title" id="cancelTitle">取消訂單</div>
+      <button class="checkout-close" onclick="closeCancel()">返回</button>
+    </div>
+    <div id="cancelSummary" class="cancel-summary"></div>
+    <label>誰取消</label>
+    <div class="cancel-type-row">
+      <button type="button" class="source-btn cancel-type" data-type="customer" onclick="pickCancelType('customer')">客戶取消</button>
+      <button type="button" class="source-btn cancel-type" data-type="store" onclick="pickCancelType('store')">店家取消</button>
+    </div>
+    <label>取消原因</label>
+    <div id="cancelReasons" class="note-grid"></div>
+    <div data-noscan class="cancel-fields">
+      <div><label>補充說明（可空白）</label><input id="cancelNote" maxlength="100" placeholder="例如：等了 40 分鐘、改天再來"></div>
+      <div id="cancelRefundRow"><label>退款金額</label><input id="cancelRefund" type="number" min="0" inputmode="numeric"></div>
+    </div>
+    <label class="chk-line"><input type="checkbox" id="cancelPrint"> 列印取消單</label>
+    <div id="cancelMsg" class="checkout-msg"></div>
+    <div class="action-row">
+      <button id="cancelConfirmBtn" class="main-btn danger-btn" onclick="confirmCancel()">確認取消訂單</button>
+      <button class="main-btn gray-btn" onclick="closeCancel()">返回</button>
     </div>
   </div>
 </div>
@@ -204,6 +235,7 @@
       <h2 class="section-title">後台管理</h2>
       <div class="admin-subtabs">
         <button class="admin-subtab active" onclick="switchAdminSection('orders',this)">今日訂單</button>
+        <button class="admin-subtab" onclick="switchAdminSection('cancel',this)">退單分析</button>
         <button class="admin-subtab" onclick="switchAdminSection('products',this)">商品管理</button>
         <button class="admin-subtab" onclick="switchAdminSection('notes',this)">備註管理</button>
         <button class="admin-subtab" onclick="switchAdminSection('sources',this)">訂單來源</button>
@@ -232,6 +264,23 @@
       <div id="salesArea"></div>
           </div>
         </div>
+      </div>
+
+      <div id="admin-cancel" class="admin-section">
+        <h2 class="section-title">退單分析</h2>
+        <div class="field-grid" data-noscan style="margin-bottom:8px;">
+          <div><label>開始日期</label><input type="date" id="cancelFrom"></div>
+          <div><label>結束日期</label><input type="date" id="cancelTo"></div>
+          <div><label>&nbsp;</label><button class="main-btn blue-btn" onclick="loadCancelStats()">查詢</button></div>
+        </div>
+        <div class="range-btns">
+          <button class="small-btn gray-btn" onclick="cancelRange(0)">今天</button>
+          <button class="small-btn gray-btn" onclick="cancelRange(6)">近 7 天</button>
+          <button class="small-btn gray-btn" onclick="cancelRange(29)">近 30 天</button>
+          <button class="small-btn gray-btn" onclick="cancelRange(89)">近 90 天</button>
+        </div>
+        <div class="hint">退單率 = 取消筆數 ÷ 總訂單筆數。客戶退單排行可點電話查看歷史交易。</div>
+        <div id="cancelStatsArea"></div>
       </div>
 
       <div id="admin-products" class="admin-section">
@@ -332,10 +381,17 @@
         <div><label>EAN13 內部前綴</label><input id="sEanPrefix" maxlength="5"></div>
         <div><label>條碼最大寬度 %</label>
           <select id="sBarcodeWidth"><option>70</option><option>80</option><option>85</option><option>88</option><option>90</option><option>92</option><option>95</option><option>100</option></select></div>
+        <div><label>條碼列印方式</label><select id="sBarcodeMode">
+          <option value="escstar">ESC * 點陣（相容性最高，建議）</option>
+          <option value="raster">GS v 0 點陣</option>
+          <option value="gsk">印表機內建條碼</option>
+          <option value="none">不印條碼</option></select></div>
         <div><label>單號同步條碼</label><select id="sAlwaysBarcode"><option value="1">開啟</option><option value="0">關閉</option></select></div>
         <div><label>結帳後開錢箱</label><select id="sOpenDrawer"><option value="0">關閉</option><option value="1">開啟</option></select></div>
         <div><label>自動切紙</label><select id="sCutPaper"><option value="1">開啟</option><option value="0">關閉</option></select></div>
         <div><label>出紙空白行</label><input id="sFeedLines" type="number" min="0" max="10"></div>
+        <div><label>取消訂單需要管理密碼</label><select id="sCancelPin"><option value="0">不需要（方便現場取消）</option><option value="1">需要</option></select></div>
+        <div style="grid-column:1/-1"><label>取消原因選項（每行一個）</label><textarea id="sCancelReasons" rows="4" data-noscan></textarea></div>
         <div><label>左邊界 mm</label><input id="sMarginLeft" type="number" step="0.5" min="0" max="30"></div>
         <div><label>上邊界 mm</label><input id="sMarginTop" type="number" step="0.5" min="0" max="30"></div>
         <div><label>開始 X 距離 mm</label><input id="sStartX" type="number" step="0.5" min="0" max="30"></div>
@@ -345,6 +401,7 @@
         <button class="main-btn blue-btn" onclick="saveSettings()">儲存設定</button>
         <button class="main-btn test-btn" onclick="testPrint(false)">測試列印</button>
         <button class="main-btn test-btn" onclick="testPrint(true)">只測條碼</button>
+        <button class="main-btn test-btn" onclick="testPrint('modes')">條碼相容性測試</button>
         <button class="main-btn gray-btn" onclick="testDrawer()">測試開錢箱</button>
       </div>
       <div id="settingsMsg" class="message"></div>
@@ -683,6 +740,7 @@ function switchAdminSection(name, btn){
   if(btn) btn.classList.add('active');
   $('admin-'+name).classList.add('active');
   if(name==='orders') loadOrders();
+  if(name==='cancel'){ if(!$('cancelFrom').value) cancelRange(29, true); loadCancelStats(); }
 }
 
 /* ---------- 點餐：每次「新增訂購」= 一個項目（商品 + 數量 + 此項備註） ---------- */
@@ -786,6 +844,7 @@ function renderCart(){
   $('sourceName').innerText = orderSource || '選擇來源';
   $('loadedOrderTag').style.display = loadedOrder ? 'inline-block' : 'none';
   $('loadedOrderTag').innerText = loadedOrder ? '叫回單號 '+loadedOrder.order_no+'（未付款）' : '';
+  $('cancelLoadedBtn').style.display = loadedOrder ? 'inline-block' : 'none';
   $('customerBar').style.display = customerPhone ? 'flex' : 'none';
   scheduleFit();
   $('customerPhoneText').innerText = fmtPhone(customerPhone);
@@ -811,9 +870,17 @@ function clearCart(withMsg){
   if(withMsg){ showMsg('posMsg','ok','目前單據已重置。'); $('receiptPreview').style.display='none'; }
 }
 function resetDraft(){
-  if(!cartItems().length && !orderSource && !customerPhone && !$('orderNoteInput').value.trim()){ clearCart(true); return; }
+  if(!cartItems().length && !orderSource && !customerPhone && !$('orderNoteInput').value.trim()){ clearCart(true); focusOrderCode(); return; }
   if(!confirm('確定要重置目前單據？已點的品項與備註都會清除。')) return;
   clearCart(true);
+  showLastOrder(null);
+  focusOrderCode();
+}
+/** 重置後游標放到「訂單條碼」並清空，方便直接刷下一張 */
+function focusOrderCode(){
+  var el=$('orderCodeInput'); clearTimeout(orderCodeTimer);
+  el.value='';
+  setTimeout(function(){ try{ el.focus(); el.select && el.select(); }catch(e){} }, 0);
 }
 function orderPayload(printFlag, pay){
   var p={items:cartItems().map(function(l){return {id:l.id,qty:l.qty,note:lineNote(l)};}), note:$('orderNoteInput').value.trim(), print:printFlag,
@@ -939,6 +1006,7 @@ async function createOrder(printFlag, pay, hold){
     showReceipt('receiptPreview', o.receipt);
     closeCheckout(false);
     clearCart(false);
+    showLastOrder(o);
     toast(printErr ? '已上傳，但列印失敗' : (hold ? '已掛單 '+o.order_no : '訂單 '+o.order_no+' 已結帳'));
     if(o.customer_phone) refreshCalls();
   }catch(e){
@@ -993,8 +1061,10 @@ function showOrderInfo(o){
     '｜'+escapeHtml(o.order_source||'')+'｜'+escapeHtml(o.created_at||'')+'</div>'+
     (o.customer_phone?'<div class="info-line">客戶：'+escapeHtml([o.customer_name||'', fmtPhone(o.customer_phone)].join(' '))+'</div>':'')+
     orderItemsHtml(o.items)+'<div class="info-total">合計 '+money(o.total)+(o.cash_received?'　收款 '+money(o.cash_received)+'　找零 '+money(o.change_amount):'')+'</div>'+
-    (o.note?'<div class="info-line">備註：'+escapeHtml(o.note)+'</div>':'')+
-    '<div class="action-row"><button class="main-btn blue-btn" onclick="closeInfo();reprintOrder('+parseInt(o.id,10)+')">補印</button><button class="main-btn gray-btn" onclick="closeInfo()">關閉</button></div>';
+    (o.note?'<div class="info-line">備註：'+escapeHtml(o.note)+'</div>':'')+cancelInfoHtml(o)+
+    '<div class="action-row">'+(o.status!=='cancelled'?'<button class="main-btn danger-btn" id="infoCancelBtn">取消訂單</button>':'')+
+    '<button class="main-btn blue-btn" onclick="closeInfo();reprintOrder('+parseInt(o.id,10)+')">補印</button><button class="main-btn gray-btn" onclick="closeInfo()">關閉</button></div>';
+  if($('infoCancelBtn')) $('infoCancelBtn').onclick=function(){ closeInfo(); openCancel(o); };
   $('infoOverlay').classList.add('show');
 }
 function closeInfo(){ $('infoOverlay').classList.remove('show'); }
@@ -1009,7 +1079,7 @@ function renderCalls(){
   if(!callList.length){ el.innerHTML='<span class="call-empty">今日尚無來電（長按號碼可新增訂單 / 查歷史）</span>'; return; }
   el.innerHTML=callList.map(function(c,i){
     return '<button class="call-chip'+(c.fresh?' fresh':'')+'" data-i="'+i+'">'+
-      '<b>'+escapeHtml(c.name||'未命名')+'</b> <span>'+escapeHtml(c.phone_display||fmtPhone(c.phone))+'</span> <small>'+escapeHtml(String(c.called_at||'').slice(11,16))+(c.count_today>1?' ×'+c.count_today:'')+'</small></button>';
+      '<b>'+escapeHtml(c.name||'未命名')+'</b> <span>'+escapeHtml(c.phone_display||fmtPhone(c.phone))+'</span>'+(c.cancel_count?' <span class="cancel-warn">退單'+c.cancel_count+'</span>':'')+' <small>'+escapeHtml(String(c.called_at||'').slice(11,16))+(c.count_today>1?' ×'+c.count_today:'')+'</small></button>';
   }).join('');
   el.querySelectorAll('.call-chip').forEach(function(btn){ bindLongPress(btn, function(){ openCallMenu(callList[+btn.dataset.i]); }, function(){ toast('長按號碼：新增來電點餐 / 查詢歷史'); }); });
 }
@@ -1043,7 +1113,7 @@ async function loadCallLog(){
     el.innerHTML=list.map(function(c,i){
       return '<button class="call-log-row" data-i="'+i+'"><span class="cl-time">'+escapeHtml(String(c.called_at).slice(11,16))+'</span>'+
         '<span class="cl-phone">'+escapeHtml(c.phone_display)+'</span><span class="cl-name">'+escapeHtml(c.name||'未命名')+'</span>'+
-        '<span class="cl-meta">來電 '+c.call_count+' 次・訂單 '+c.order_count+' 筆</span></button>';
+        '<span class="cl-meta">來電 '+c.call_count+' 次・訂單 '+c.order_count+' 筆'+(c.cancel_count?'・<span class="cancel-warn">退單 '+c.cancel_count+' 次</span>':'')+'</span></button>';
     }).join('');
     el.querySelectorAll('.call-log-row').forEach(function(btn){
       bindLongPress(btn, function(){ openCallMenu(list[+btn.dataset.i], {autoplay:true}); }, function(){ toast('長按記錄：播放來電錄音 / 新增來電點餐 / 查詢歷史'); });
@@ -1059,6 +1129,8 @@ function openCallMenu(c, opts){
   callTarget=c;
   $('callTitle').innerText='來電 '+(c.phone_display||fmtPhone(c.phone))+(c.called_at?' '+String(c.called_at).slice(5,16):'');
   $('callNameInput').value=c.name||'';
+  $('callWarn').innerHTML = c.cancel_count ? '⚠ 這位客戶曾退單 '+c.cancel_count+' 次，接單時請再確認' : '';
+  $('callWarn').style.display = c.cancel_count ? 'block' : 'none';
   $('callOverlay').classList.add('show');
   recFind(c, !!(opts && opts.autoplay));
 }
@@ -1171,19 +1243,155 @@ async function showHistory(phone){
     $('infoTitle').innerText='歷史交易：'+(c.name||'未命名')+' '+c.phone_display;
     var top=(h.top_items||[]).map(function(x){ return '<span class="src-badge">'+escapeHtml(x.name)+' ×'+x.qty+'</span>'; }).join('');
     var list=(h.orders||[]).map(function(o,i){
-      return '<div class="hist-order"><div class="info-line"><b>'+escapeHtml(o.order_no)+'</b>　'+escapeHtml(o.created_at)+'　'+money(o.total)+'　'+(o.status==='cancelled'?'已取消':((o.pay_status||'paid')==='unpaid'?'未付款':'已付款'))+'</div>'+
-        orderItemsHtml(o.items)+'<button class="small-btn blue-btn" onclick="reorder('+i+')">再訂一次</button></div>';
+      return '<div class="hist-order"><div class="info-line"><b>'+escapeHtml(o.order_no)+'</b>　'+escapeHtml(o.created_at)+'　'+money(o.total)+'　'+(o.status==='cancelled'?'<b style="color:#b3261e">已取消</b>':((o.pay_status||'paid')==='unpaid'?'未付款':'已付款'))+'</div>'+
+        (o.status==='cancelled'?cancelTagHtml(o):'')+orderItemsHtml(o.items)+'<button class="small-btn blue-btn" onclick="reorder('+i+')">再訂一次</button>'+
+        (o.status!=='cancelled'?'<button class="small-btn danger-btn" onclick="cancelFromHistory('+i+')">取消此單</button>':'')+'</div>';
     }).join('');
-    $('infoBody').innerHTML='<div class="info-line">共 '+h.order_count+' 筆訂單，來電 '+(c.call_count||0)+' 次</div>'+
+    var cx=h.cancel||{};
+    $('infoBody').innerHTML='<div class="info-line">共 '+h.order_count+' 筆訂單，來電 '+(c.call_count||0)+' 次'+
+      (cx.cancel_count?'　<span class="cancel-warn">退單 '+cx.cancel_count+' 次（退單率 '+cx.cancel_rate+'%）</span>':'　退單 0 次')+'</div>'+
       (top?'<h3 class="section-title">常點品項</h3><div>'+top+'</div>':'')+
       '<h3 class="section-title" style="margin-top:10px">最近訂單</h3>'+(list||'<div class="cart-empty">尚無交易紀錄</div>');
     $('infoOverlay').classList.add('show');
   }catch(e){ alert(e.message); }
 }
+function cancelFromHistory(i){
+  var o=historyData.orders[i], phone=historyData.customer.phone;
+  closeInfo();
+  openCancel(o, function(){ showHistory(phone); });
+}
 function reorder(i){
   var o=historyData.orders[i], c=historyData.customer;
   closeInfo();
   if(startCallOrder(c.phone, c.name, o.items)) toast('已帶入 '+o.order_no+' 的品項', 2000);
+}
+
+/* ---------- 取消訂單（含註記） ---------- */
+var cancelCtx=null;
+var CANCEL_TYPE_LABEL={customer:'客戶取消', store:'店家取消'};
+function cancelReasonList(){ return String((appData.settings||{}).cancel_reasons||'').split(/\r?\n/).map(function(x){return x.trim();}).filter(Boolean); }
+function isPaid(o){ return String(o.pay_status||'paid')!=='unpaid'; }
+function cancelTagHtml(o){
+  return '<div class="cancel-tag">'+escapeHtml(CANCEL_TYPE_LABEL[o.cancel_type]||'取消')+'：'+escapeHtml(o.cancel_reason||'未註記')+
+    (o.cancel_note?'<br><span>'+escapeHtml(o.cancel_note)+'</span>':'')+(Number(o.cancel_refund)>0?'<br>退款 '+money(o.cancel_refund):'')+'</div>';
+}
+function cancelInfoHtml(o){
+  if(o.status!=='cancelled') return '';
+  return '<div class="info-line">'+cancelTagHtml(o)+'<span class="hint">取消時間：'+escapeHtml(o.cancelled_at||'')+'</span></div>';
+}
+function openCancel(o, after){
+  if(!o) return;
+  if(o.status==='cancelled'){ toast('此訂單已經取消'); return; }
+  cancelCtx={order:o, type:'', reason:'', after:after||null};
+  $('cancelTitle').innerText='取消訂單 '+o.order_no;
+  $('cancelSummary').innerHTML='<b>'+money(o.total)+'</b>　'+escapeHtml(o.order_source||'')+'　'+
+    (o.status==='completed'?'已完成　':'')+(isPaid(o)?'<span style="color:#237a3b">已付款</span>':'未付款（掛單）')+
+    (o.customer_phone?'<br>客戶：'+escapeHtml([o.customer_name||'', fmtPhone(o.customer_phone)].join(' ').trim()):'')+
+    '<br><span class="hint">'+(o.items||[]).map(function(i){ return escapeHtml(i.name)+'×'+i.qty; }).join('、')+'</span>';
+  document.querySelectorAll('#cancelOverlay .cancel-type').forEach(function(b){ b.classList.remove('active'); });
+  $('cancelReasons').innerHTML=cancelReasonList().map(function(r){ return '<button type="button" class="note-chip cancel-reason">'+escapeHtml(r)+'</button>'; }).join('');
+  $('cancelReasons').querySelectorAll('.cancel-reason').forEach(function(b){ b.onclick=function(){ pickCancelReason(b.textContent); }; });
+  $('cancelNote').value='';
+  $('cancelRefundRow').style.display = isPaid(o) ? '' : 'none';
+  $('cancelRefund').value = isPaid(o) ? (parseInt(o.total,10)||0) : 0;
+  $('cancelPrint').checked=false;
+  $('cancelMsg').innerText='';
+  $('cancelConfirmBtn').disabled=false;
+  $('cancelOverlay').classList.add('show');
+}
+function closeCancel(){ $('cancelOverlay').classList.remove('show'); cancelCtx=null; }
+function pickCancelType(t){
+  if(!cancelCtx) return; cancelCtx.type=t;
+  document.querySelectorAll('#cancelOverlay .cancel-type').forEach(function(b){ b.classList.toggle('active', b.dataset.type===t); });
+  $('cancelMsg').innerText='';
+}
+function pickCancelReason(r){
+  if(!cancelCtx) return; cancelCtx.reason=r;
+  $('cancelReasons').querySelectorAll('.cancel-reason').forEach(function(b){ b.classList.toggle('active', b.textContent===r); });
+  $('cancelMsg').innerText='';
+}
+async function confirmCancel(){
+  var c=cancelCtx; if(!c) return;
+  if(!c.type){ $('cancelMsg').innerText='請選擇「客戶取消」或「店家取消」'; return; }
+  if(!c.reason){ $('cancelMsg').innerText='請選擇取消原因'; return; }
+  var input={order_id:c.order.id, type:c.type, reason:c.reason, note:$('cancelNote').value.trim(), print:$('cancelPrint').checked};
+  if(isPaid(c.order)) input.refund=$('cancelRefund').value;
+  try{
+    if(truthyStr((appData.settings||{}).cancel_require_pin)) input.pin=await askPin();
+  }catch(e){ return; }
+  $('cancelConfirmBtn').disabled=true; $('cancelMsg').innerText='取消中...';
+  try{
+    var r=await api('apiCancelOrder', input);
+    var after=c.after;
+    closeCancel();
+    var msg=r.message;
+    if(r.print_job){
+      try{ await printJob(r.print_job); msg+='\n已列印取消單'; }catch(pe){ msg+='\n取消單列印失敗：'+pe.message; }
+    }
+    toast(msg, 3000);
+    if(lastOrder && Number(lastOrder.id)===Number(r.order.id)) showLastOrder(null);
+    if(after) after(r.order);
+  }catch(e){ $('cancelMsg').innerText=e.message; $('cancelConfirmBtn').disabled=false; }
+}
+function truthyStr(v){ return /^(1|true|yes|on)$/i.test(String(v==null?'':v).trim()); }
+
+/* POS：剛結帳 / 掛單的單據可以直接取消 */
+var lastOrder=null;
+function showLastOrder(o){
+  lastOrder=o||null;
+  var el=$('lastOrderBar');
+  if(!o){ el.style.display='none'; el.innerHTML=''; return; }
+  el.innerHTML='<span>剛建立：<b>'+escapeHtml(o.order_no)+'</b>　'+money(o.total)+'　'+escapeHtml(o.order_source||'')+'</span>'+
+    '<button type="button" class="small-btn danger-btn" id="lastOrderCancelBtn">取消此單</button>';
+  el.style.display='flex';
+  $('lastOrderCancelBtn').onclick=function(){ openCancel(lastOrder, function(x){ showMsg('posMsg','ok','訂單 '+x.order_no+' 已取消（'+(CANCEL_TYPE_LABEL[x.cancel_type]||'')+'：'+x.cancel_reason+'）'); }); };
+}
+/* POS：叫回的掛單（未付款）取消 */
+async function cancelLoadedOrder(){
+  if(!loadedOrder) return;
+  try{
+    var o=(await api('apiLoadOrder', loadedOrder.order_no)).order;
+    openCancel(o, function(x){ clearCart(false); showMsg('posMsg','ok','掛單 '+x.order_no+' 已取消（'+(CANCEL_TYPE_LABEL[x.cancel_type]||'')+'：'+x.cancel_reason+'）'); });
+  }catch(e){ showMsg('posMsg','err',e.message); }
+}
+
+/* ---------- 後台：退單分析 ---------- */
+function ymd(d){ return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+function cancelRange(days, noLoad){
+  var t=appData.today ? new Date(appData.today+'T00:00:00') : new Date();
+  var f=new Date(t.getTime()); f.setDate(f.getDate()-days);
+  $('cancelFrom').value=ymd(f); $('cancelTo').value=ymd(t);
+  if(!noLoad) loadCancelStats();
+}
+function statTable(head, rows){
+  return '<table class="cancel-table"><thead><tr>'+head.map(function(h){ return '<th>'+h+'</th>'; }).join('')+'</tr></thead><tbody>'+
+    (rows.length?rows.join(''):'<tr><td colspan="'+head.length+'" class="hint">無資料</td></tr>')+'</tbody></table>';
+}
+function rateBar(rate){ return '<div class="rate-bar"><span style="width:'+Math.min(100,rate)+'%"></span></div><b>'+rate+'%</b>'; }
+var cancelStatsData=null;
+async function loadCancelStats(){
+  var el=$('cancelStatsArea');
+  el.innerHTML='<div class="cart-empty">統計中...</div>';
+  try{
+    var s=cancelStatsData=await api('apiCancelStats', await askPin(), $('cancelFrom').value, $('cancelTo').value);
+    var td=function(v,cls){ return '<td'+(cls?' class="'+cls+'"':'')+'>'+v+'</td>'; };
+    var html='<div class="stats">'+
+      '<div class="stat-card"><div class="stat-title">總訂單</div><div class="stat-value">'+s.total+'</div><div>'+escapeHtml(s.from)+' ~ '+escapeHtml(s.to)+'</div></div>'+
+      '<div class="stat-card"><div class="stat-title">取消</div><div class="stat-value">'+s.cancelled+'</div><div>'+money(s.cancel_amount)+'</div></div>'+
+      '<div class="stat-card"><div class="stat-title">退單率</div><div class="stat-value">'+s.rate+'%</div><div>取消 ÷ 總訂單</div></div>'+
+      '<div class="stat-card"><div class="stat-title">退款</div><div class="stat-value">'+money(s.refund)+'</div><div>已付款訂單</div></div></div>';
+    html+='<div class="cancel-grid"><div><h3 class="section-title">依取消原因</h3>'+statTable(['原因','筆數','佔比','金額'], s.by_reason.map(function(x){ return '<tr>'+td(escapeHtml(x.name))+td(x.cancelled,'num-cell')+td(x.share+'%','num-cell')+td(money(x.amount),'num-cell')+'</tr>'; }))+
+      '<h3 class="section-title">依取消類型</h3>'+statTable(['類型','筆數','金額'], s.by_type.map(function(x){ return '<tr>'+td(escapeHtml(x.name))+td(x.cancelled,'num-cell')+td(money(x.amount),'num-cell')+'</tr>'; }))+'</div>'+
+      '<div><h3 class="section-title">依訂單來源</h3>'+statTable(['來源','訂單','取消','退單率'], s.by_source.map(function(x){ return '<tr>'+td(escapeHtml(x.name))+td(x.orders,'num-cell')+td(x.cancelled,'num-cell')+td(rateBar(x.rate))+'</tr>'; }))+
+      '<h3 class="section-title">每日</h3>'+statTable(['日期','訂單','取消','退單率'], s.by_date.map(function(x){ return '<tr>'+td(escapeHtml(x.name))+td(x.orders,'num-cell')+td(x.cancelled,'num-cell')+td(rateBar(x.rate))+'</tr>'; }))+'</div></div>';
+    html+='<h3 class="section-title">客戶退單排行</h3>'+statTable(['客戶','電話','訂單','取消','退單率'], s.by_customer.map(function(x){
+      return '<tr>'+td(escapeHtml(x.customer_name||'未命名'))+td('<a href="#" class="phone-link" data-phone="'+escapeHtml(x.phone)+'">'+escapeHtml(x.phone_display)+'</a>')+td(x.orders,'num-cell')+td(x.cancelled,'num-cell')+td(rateBar(x.rate))+'</tr>'; }));
+    html+='<h3 class="section-title">最近取消明細</h3>'+statTable(['取消時間','單號','來源 / 客戶','註記','金額'], s.recent.map(function(o){
+      return '<tr>'+td(escapeHtml(o.cancelled_at))+td(escapeHtml(o.order_no))+td(escapeHtml(o.order_source||'')+(o.customer_phone?'<br><span class="hint">'+escapeHtml([o.customer_name||'',fmtPhone(o.customer_phone)].join(' '))+'</span>':''))+
+        td(cancelTagHtml(o))+td(money(o.total),'num-cell')+'</tr>'; }));
+    el.innerHTML=html;
+    el.querySelectorAll('.phone-link').forEach(function(a){ a.onclick=function(ev){ ev.preventDefault(); showHistory(a.dataset.phone); }; });
+  }catch(e){ el.innerHTML='<div class="message err" style="display:block">'+escapeHtml(e.message)+'</div>'; }
 }
 
 /* ---------- 結帳鍵盤 ---------- */
@@ -1235,7 +1443,9 @@ function renderSummary(s){
     '<div class="stat-card"><div class="stat-title">有效營收</div><div class="stat-value">'+money((p.amount||0)+(c.amount||0))+'</div><div>不含取消</div></div>'+
     ((s.by_source||[]).length ? '<div class="source-sum">'+s.by_source.map(function(x){ return '<span class="src-badge">'+escapeHtml(x.name)+'：'+x.cnt+' 筆／'+money(x.amount)+'</span>'; }).join('')+'</div>' : '');
 }
+var adminOrders=[];
 function renderOrders(orders){
+  adminOrders=orders;
   if(!orders.length){$('ordersArea').innerHTML='<div class="cart-empty">此條件無訂單</div>';return;}
   var html='<table><thead><tr><th style="width:150px">單號 / 條碼</th><th style="width:86px">狀態</th><th>訂單明細</th><th>備註</th><th style="width:130px">金額 / 付款</th><th style="width:170px">時間</th><th style="width:150px">動作</th></tr></thead><tbody>';
   orders.forEach(function(o){
@@ -1245,8 +1455,9 @@ function renderOrders(orders){
     var pay=o.cash_received>0?'<br><span class="hint">收款：'+money(o.cash_received)+'<br>找零：'+money(o.change_amount)+'</span>':'<br><span class="hint">未記錄收款</span>';
     var id=parseInt(o.id,10);
     var actions='<button class="small-btn blue-btn" onclick="reprintOrder('+id+')">補印</button>';
-    if(o.status==='pending') actions='<button class="small-btn ok-btn" onclick="completeOrder('+id+')">完成</button><button class="small-btn danger-btn" onclick="cancelOrder('+id+')">取消</button>'+actions;
-    html+='<tr><td>'+(o.order_source?'<span class="src-badge">'+escapeHtml(o.order_source)+'</span>':'')+(o.pay_status==='unpaid'?'<span class="src-badge unpaid">未付款</span>':'')+'<br>'+(o.customer_phone?'<span class="hint">'+escapeHtml([o.customer_name||'',fmtPhone(o.customer_phone)].join(' '))+'</span><br>':'')+'<b>'+escapeHtml(o.order_no)+'</b><br><span class="hint">條碼：'+escapeHtml(o.barcode_no)+'</span>'+(o.printed_at?'':'<br><span class="hint" style="color:#b3261e">未列印</span>')+'</td><td><span class="badge '+escapeHtml(o.status)+'">'+statusLabel(o.status)+'</span></td><td>'+items+'</td><td>'+escapeHtml(o.note)+'</td><td><b>'+money(o.total)+'</b>'+pay+'</td><td>'+escapeHtml(o.created_at)+(o.completed_at?'<br>完成：'+escapeHtml(o.completed_at):'')+(o.cancelled_at?'<br>取消：'+escapeHtml(o.cancelled_at):'')+'</td><td>'+actions+'</td></tr>';
+    if(o.status!=='cancelled') actions='<button class="small-btn danger-btn" onclick="cancelOrder('+id+')">取消</button>'+actions;
+    if(o.status==='pending') actions='<button class="small-btn ok-btn" onclick="completeOrder('+id+')">完成</button>'+actions;
+    html+='<tr data-order-no="'+escapeHtml(o.order_no)+'"><td>'+(o.order_source?'<span class="src-badge">'+escapeHtml(o.order_source)+'</span>':'')+(o.pay_status==='unpaid'?'<span class="src-badge unpaid">未付款</span>':'')+'<br>'+(o.customer_phone?'<span class="hint">'+escapeHtml([o.customer_name||'',fmtPhone(o.customer_phone)].join(' '))+'</span><br>':'')+'<b>'+escapeHtml(o.order_no)+'</b><br><span class="hint">條碼：'+escapeHtml(o.barcode_no)+'</span>'+(o.printed_at?'':'<br><span class="hint" style="color:#b3261e">未列印</span>')+'</td><td><span class="badge '+escapeHtml(o.status)+'">'+statusLabel(o.status)+'</span>'+(o.status==='cancelled'?cancelTagHtml(o):'')+'</td><td>'+items+'</td><td>'+escapeHtml(o.note)+'</td><td><b>'+money(o.total)+'</b>'+pay+'</td><td>'+escapeHtml(o.created_at)+(o.completed_at?'<br>完成：'+escapeHtml(o.completed_at):'')+(o.cancelled_at?'<br>取消：'+escapeHtml(o.cancelled_at):'')+'</td><td>'+actions+'</td></tr>';
   });
   $('ordersArea').innerHTML=html+'</tbody></table>';
 }
@@ -1257,7 +1468,10 @@ function renderSales(items){
   $('salesArea').innerHTML=html+'</tbody></table>';
 }
 async function completeOrder(id){ if(!confirm('確認此訂單已完成？'))return; try{await api('apiCompleteOrder',id);}catch(e){alert(e.message);} loadOrders(); }
-async function cancelOrder(id){ if(!confirm('確認取消此訂單？'))return; try{await api('apiCancelOrder',id);}catch(e){alert(e.message);} loadOrders(); }
+function cancelOrder(id){
+  var o=(adminOrders||[]).filter(function(x){ return Number(x.id)===Number(id); })[0];
+  if(o) openCancel(o, function(){ loadOrders(); });
+}
 async function reprintOrder(id){
   try{ var j=await api('apiReprintJob',id); j.print_job.printer.open_cash_drawer=false; var pr=await printJob(j.print_job); if(!pr||!pr.skipped) await api('apiMarkPrinted',id); toast('補印成功：'+j.order_no); loadOrders(); }
   catch(e){ alert('補印失敗：'+e.message); }
@@ -1380,7 +1594,7 @@ var SETTING_FIELDS = {
   shop_name:'sShopName', shop_address:'sShopAddress', shop_phone:'sShopPhone', footer_msg:'sFooterMsg',
   print_mode:'sPrintMode', paper_width_mm:'sPaperWidth', encoding:'sEncoding', print_darkness:'sDarkness',
   line_spacing_percent:'sLineSpacing', ean13_prefix:'sEanPrefix', barcode_max_width_percent:'sBarcodeWidth',
-  always_print_barcode:'sAlwaysBarcode', open_cash_drawer:'sOpenDrawer', cut_paper:'sCutPaper', feed_lines_after:'sFeedLines',
+  always_print_barcode:'sAlwaysBarcode', barcode_print_mode:'sBarcodeMode', cancel_reasons:'sCancelReasons', cancel_require_pin:'sCancelPin', open_cash_drawer:'sOpenDrawer', cut_paper:'sCutPaper', feed_lines_after:'sFeedLines',
   barcode_confirm:'sBarcodeConfirm', print_margin_left_mm:'sMarginLeft', print_margin_top_mm:'sMarginTop', print_start_x_mm:'sStartX', print_start_y_mm:'sStartY'
 };
 function applySettingsToUi(){
@@ -1396,7 +1610,7 @@ async function saveSettings(){
 async function testPrint(barcodeOnly){
   showMsg('settingsMsg','ok','測試列印中...（使用已儲存的設定）');
   try{
-    var j=await api('apiTestPrintJob', !!barcodeOnly);
+    var j=await api('apiTestPrintJob', barcodeOnly==='modes' ? 'modes' : !!barcodeOnly);
     showReceipt('settingsReceipt', j.receipt);
     var pr=await printJob(j.print_job);
     showMsg('settingsMsg','ok','測試列印成功\n'+((pr&&pr.printer)||'')+'\nEAN13：'+j.ean13);

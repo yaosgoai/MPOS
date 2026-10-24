@@ -85,6 +85,71 @@ public final class EscPosEncoder {
         return out.toByteArray();
     }
 
+    /** 條碼每個模組（最細線條）的點數，依紙寬與最大寬度比例 */
+    static int moduleDots(int bitsLen, int paperDots, int maxWidthPercent) {
+        int target = paperDots * Math.max(50, Math.min(100, maxWidthPercent)) / 100;
+        int module = Math.max(2, target / bitsLen);
+        if (module * bitsLen > paperDots) module = Math.max(1, paperDots / bitsLen);
+        return module;
+    }
+
+    /**
+     * ESC * 33（24 點雙密度位元影像）：最早期的 Epson 指令，便宜的藍牙 / 標籤機幾乎都支援。
+     * 每 24 列一段，每欄 3 bytes（上到下，MSB 在上）。
+     */
+    public static byte[] ean13EscStar(String ean13, int paperDots, int maxWidthPercent, int bands, int lineSpacingDots) {
+        String bits = Ean13.bits(ean13);
+        int module = moduleDots(bits.length(), paperDots, maxWidthPercent);
+        int width = module * bits.length();
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.write(ESC); out.write(0x33); out.write(24); // 行距 = 24 點，段與段之間不留白
+        for (int b = 0; b < bands; b++) {
+            out.write(ESC); out.write(0x2A); out.write(33);
+            out.write(width & 0xFF); out.write((width >> 8) & 0xFF);
+            for (int x = 0; x < width; x++) {
+                byte v = bits.charAt(x / module) == '1' ? (byte) 0xFF : 0x00;
+                out.write(v); out.write(v); out.write(v);
+            }
+            out.write(LF);
+        }
+        out.write(ESC); out.write(0x33); out.write(lineSpacingDots & 0xFF); // 還原行距
+        return out.toByteArray();
+    }
+
+    /** GS k 印表機內建 EAN13（含下方數字）：GS h 高度、GS w 線寬、GS H 2 數字在下 */
+    public static byte[] ean13Native(String ean13, int paperDots, int maxWidthPercent, int heightDots) {
+        int module = Math.max(2, Math.min(6, moduleDots(95, paperDots, maxWidthPercent)));
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.write(GS); out.write(0x68); out.write(Math.max(1, Math.min(255, heightDots)));
+        out.write(GS); out.write(0x77); out.write(module);
+        out.write(GS); out.write(0x48); out.write(2);
+        out.write(GS); out.write(0x6B); out.write(67); out.write(12);
+        byte[] d = ean13.substring(0, 12).getBytes(StandardCharsets.US_ASCII);
+        out.write(d, 0, d.length);
+        out.write(LF);
+        return out.toByteArray();
+    }
+
+    static int lineSpacingDots(int percent) {
+        int p = Math.max(70, Math.min(160, percent));
+        return Math.max(16, Math.min(40, Math.round(24f * p / 100f)));
+    }
+
+    /** 依列印方式產生條碼位元組；圖片模式前後暫時離開漢字模式，避免部分機型把圖片資料當文字印出 */
+    static byte[] barcodeBytes(PrintJob job, PrintJob.Line line, int dots, boolean multiByte) {
+        String mode = line.barcodeMode != null && !line.barcodeMode.isEmpty() ? line.barcodeMode : job.barcodeMode;
+        if (mode == null || mode.isEmpty()) mode = "escstar";
+        if ("none".equals(mode)) return new byte[0];
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        boolean image = !"gsk".equals(mode);
+        if (image && multiByte) { out.write(FS); out.write(0x2E); } // FS . 取消漢字模式
+        if ("raster".equals(mode)) put(out, ean13Raster(job.ean13, dots, job.barcodeMaxWidthPercent, 80));
+        else if ("gsk".equals(mode)) put(out, ean13Native(job.ean13, dots, job.barcodeMaxWidthPercent, 80));
+        else put(out, ean13EscStar(job.ean13, dots, job.barcodeMaxWidthPercent, 3, lineSpacingDots(job.lineSpacingPercent)));
+        if (image && multiByte) { out.write(FS); out.write(0x26); } // FS & 回到漢字模式
+        return out.toByteArray();
+    }
+
     /** ByteArrayOutputStream.writeBytes 需 API 33，改用相容寫法 */
     private static void put(ByteArrayOutputStream out, byte[] b) {
         out.write(b, 0, b.length);
@@ -119,7 +184,7 @@ public final class EscPosEncoder {
             newlines(out, Math.max(0, Math.round(line.spaceBefore / 12f)));
             put(out, alignCommand(line.align));
             if ("barcode".equals(line.role)) {
-                if (Ean13.isValid(job.ean13)) put(out, ean13Raster(job.ean13, dots, job.barcodeMaxWidthPercent, 80));
+                if (Ean13.isValid(job.ean13)) put(out, barcodeBytes(job, line, dots, multiByte));
             } else {
                 put(out, sizeCommand(line.fontPt));
                 if (line.bold) { out.write(ESC); out.write(0x45); out.write(1); }

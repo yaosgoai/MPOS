@@ -17,6 +17,8 @@ public class PrintJob {
     public double startXMm = 0;
     public double startYMm = 0;
     public int barcodeMaxWidthPercent = 88;
+    /** 條碼列印方式：escstar（ESC * 點陣，相容性最高）/ raster（GS v 0）/ gsk（印表機內建 EAN13）/ none */
+    public String barcodeMode = "escstar";
     public boolean openCashDrawer = false;
     public boolean cutPaper = true;
     public int feedLinesAfter = 3;
@@ -32,6 +34,8 @@ public class PrintJob {
         public int xOffset = 0;
         public int spaceBefore = 0;
         public int spaceAfter = 0;
+        /** 只用於 role=barcode：覆寫整張的條碼列印方式（條碼相容性測試用） */
+        public String barcodeMode = "";
 
         public Line() {}
 
