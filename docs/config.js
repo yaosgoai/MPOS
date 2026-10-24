@@ -2,5 +2,5 @@
 window.MPOS_CONFIG = {
   "gasUrl": "https://script.google.com/macros/s/AKfycbzROKzak-IwxodfLfrSa2mGKvU1AevDlUr_DrO-gjP3Rn1ptVp_EP59LWmWTnZXiVfBCw/exec",
   "repo": "yaosgoai/MPOS",
-  "deployedAt": "2026-10-24 13:37:22"
+  "deployedAt": "2026-10-24 13:46:48"
 };

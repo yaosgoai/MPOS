@@ -135,7 +135,16 @@ if (-not $run) { Fail "找不到這次推送的 GitHub Actions 執行紀錄：ht
 Write-Info "Actions：$($run.url)"
 Write-Info '（APK 編譯 + 模擬器測試約需 10~20 分鐘）'
 & gh run watch $run.databaseId --repo $cfg.repo --exit-status --interval 20
-if ($LASTEXITCODE -ne 0) { Fail "GitHub Actions 失敗，請查看：$($run.url)" }
+if ($LASTEXITCODE -ne 0) {
+    Write-Warn2 '以下是失敗步驟的紀錄（最後 80 行）：'
+    $log = Get-NativeOutput 'gh' @('run', 'view', $run.databaseId, '--repo', $cfg.repo, '--log-failed') 'gh run view' -AllowFail
+    ($log -split "`n" | Select-Object -Last 80) -join "`n" | Write-Host
+    $logFile = Join-Path $Root 'dist\last-ci-failure.log'
+    New-Item -ItemType Directory -Force -Path (Join-Path $Root 'dist') | Out-Null
+    Write-Utf8File $logFile $log
+    Write-Info "完整紀錄已存到：$logFile"
+    Fail "GitHub Actions 失敗，請查看：$($run.url)"
+}
 Write-Ok 'GitHub Actions 全部通過'
 
 # ------------------------------------------------------------

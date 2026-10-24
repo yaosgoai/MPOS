@@ -153,3 +153,27 @@ test('查詢頁 ?page=lookup&q=EAN13', async () => {
   assert.match(await page.innerText('#result'), /卡士達/);
   await ctx.close();
 });
+
+test('RWD：手機直式 / 橫式、平板直式 / 橫式不超出畫面', async () => {
+  for (const [w, hh] of [[412, 880], [880, 412], [800, 1280], [1280, 800]]) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: hh }, isMobile: w < 1000, hasTouch: true });
+    const page = await ctx.newPage();
+    await page.goto(h.shellUrl);
+    await page.waitForFunction(() => window.MPOS_SHELL && window.MPOS_SHELL.gasReady);
+    const frame = page.frames().find((f) => f.url().startsWith(h.gasUrl));
+    await frame.waitForFunction(() => window.__MPOS_READY__ === true);
+    await frame.click('#newOrderBtn');
+    await frame.click('.item-btn[data-id="custard"]');
+    const foot = await frame.evaluate(() => document.getElementById('pickerDoneBtn').getBoundingClientRect().bottom);
+    assert.ok(foot <= hh, `${w}x${hh} 新增訂購按鈕超出畫面`);
+    await frame.click('#pickerDoneBtn');
+    await frame.click('#checkoutBtn');
+    const r = await frame.evaluate(() => ({
+      btn: document.getElementById('checkoutConfirmBtn').getBoundingClientRect().bottom,
+      sw: document.documentElement.scrollWidth, vw: innerWidth,
+    }));
+    assert.ok(r.btn <= hh, `${w}x${hh} 結帳並列印按鈕超出畫面 (${r.btn})`);
+    assert.ok(r.sw <= r.vw + 1, `${w}x${hh} 出現水平捲軸`);
+    await ctx.close();
+  }
+});

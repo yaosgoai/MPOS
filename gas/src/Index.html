@@ -37,7 +37,7 @@
       </div>
       <div id="cartArea" class="cart-empty">尚未點選商品，請按「＋ 新增訂購」</div>
       <div class="total-box"><div class="total-label">總金額</div><div class="total-value" id="totalValue">0 元</div></div>
-      <h2 class="section-title" style="font-size:18px;margin-top:14px;">整張訂單備註</h2>
+      <h2 class="section-title" style="margin-top:14px;">整張訂單備註</h2>
       <textarea id="orderNoteInput" placeholder="整張訂單的備註，例如：王先生 18:30 取餐、電話預訂"></textarea>
       <div class="action-row">
         <button id="checkoutBtn" class="main-btn print-btn" onclick="openCheckout()">結帳</button>
@@ -217,7 +217,7 @@
         <button class="main-btn gray-btn" onclick="resetLayoutDefault()">恢復預設</button>
       </div>
       <div id="layoutEditorArea" style="margin-top:12px;"></div>
-      <h2 class="section-title" style="font-size:18px;margin-top:14px;">版型預覽</h2>
+      <h2 class="section-title" style="margin-top:14px;">版型預覽</h2>
       <div id="layoutPreviewArea" class="layout-preview-box"></div>
     </section>
   </div>
@@ -230,36 +230,43 @@
       <div class="checkout-title">現金結帳</div>
       <button class="checkout-close" onclick="closeCheckout()">關閉</button>
     </div>
-    <div class="checkout-screen">
-      <div class="checkout-row"><span>應收金額</span><span id="checkoutTotal">0 元</span></div>
-      <div class="checkout-row"><span>收款金額</span><span></span></div>
-      <div id="checkoutReceived" class="checkout-input">0</div>
-      <div class="checkout-row big"><span>找零金額</span><span id="checkoutChange">尚未計算</span></div>
-    </div>
-    <div class="quick-cash">
-      <button class="key-btn" onclick="setExactCash()">剛好</button>
-      <button class="key-btn" onclick="setCashAmount(100)">$100</button>
-      <button class="key-btn" onclick="setCashAmount(500)">$500</button>
-      <button class="key-btn" onclick="setCashAmount(1000)">$1000</button>
-    </div>
-    <div class="keypad">
-      <button class="key-btn" onclick="keypadInput('7')">7</button>
-      <button class="key-btn" onclick="keypadInput('8')">8</button>
-      <button class="key-btn" onclick="keypadInput('9')">9</button>
-      <button class="key-btn" onclick="keypadInput('4')">4</button>
-      <button class="key-btn" onclick="keypadInput('5')">5</button>
-      <button class="key-btn" onclick="keypadInput('6')">6</button>
-      <button class="key-btn" onclick="keypadInput('1')">1</button>
-      <button class="key-btn" onclick="keypadInput('2')">2</button>
-      <button class="key-btn" onclick="keypadInput('3')">3</button>
-      <button class="key-btn fn" onclick="keypadBackspace()">退格</button>
-      <button class="key-btn" onclick="keypadInput('0')">0</button>
-      <button class="key-btn fn" onclick="keypadClear()">清除</button>
-      <button class="key-btn calc" onclick="prepareCheckoutPayment()">計算找零</button>
-      <button class="key-btn fn" onclick="keypadInput('00')">00</button>
-      <button class="key-btn calc" onclick="prepareCheckoutPayment()">計算</button>
-      <button id="checkoutNoPrintBtn" class="key-btn no-print" onclick="confirmCheckout(false)">結帳（不列印）</button>
-      <button id="checkoutConfirmBtn" class="key-btn confirm" onclick="confirmCheckout(true)">結帳並列印</button>
+    <div class="checkout-body">
+      <div class="checkout-left">
+        <div class="checkout-screen">
+          <div class="checkout-row"><span>應收金額</span><span id="checkoutTotal">0 元</span></div>
+          <div class="checkout-row"><span>收款金額</span><span></span></div>
+          <div id="checkoutReceived" class="checkout-input">0</div>
+          <div class="checkout-row big"><span>找零</span><span id="checkoutChange">尚未計算</span></div>
+        </div>
+        <div class="quick-cash">
+          <button class="key-btn" onclick="setExactCash()">剛好</button>
+          <button class="key-btn" onclick="setCashAmount(100)">$100</button>
+          <button class="key-btn" onclick="setCashAmount(500)">$500</button>
+          <button class="key-btn" onclick="setCashAmount(1000)">$1000</button>
+        </div>
+      </div>
+      <div class="checkout-right">
+        <div class="keypad">
+          <button class="key-btn" onclick="keypadInput('7')">7</button>
+          <button class="key-btn" onclick="keypadInput('8')">8</button>
+          <button class="key-btn" onclick="keypadInput('9')">9</button>
+          <button class="key-btn" onclick="keypadInput('4')">4</button>
+          <button class="key-btn" onclick="keypadInput('5')">5</button>
+          <button class="key-btn" onclick="keypadInput('6')">6</button>
+          <button class="key-btn" onclick="keypadInput('1')">1</button>
+          <button class="key-btn" onclick="keypadInput('2')">2</button>
+          <button class="key-btn" onclick="keypadInput('3')">3</button>
+          <button class="key-btn" onclick="keypadInput('00')">00</button>
+          <button class="key-btn" onclick="keypadInput('0')">0</button>
+          <button class="key-btn fn" onclick="keypadBackspace()">退格</button>
+          <button class="key-btn fn" onclick="keypadClear()">清除</button>
+          <button class="key-btn calc span2" onclick="prepareCheckoutPayment()">計算找零</button>
+        </div>
+        <div class="checkout-actions">
+          <button id="checkoutNoPrintBtn" class="key-btn no-print" onclick="confirmCheckout(false)">結帳（不列印）</button>
+          <button id="checkoutConfirmBtn" class="key-btn confirm" onclick="confirmCheckout(true)">結帳並列印</button>
+        </div>
+      </div>
     </div>
     <div id="checkoutMsg" class="checkout-msg"></div>
   </div>
