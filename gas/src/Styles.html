@@ -385,4 +385,13 @@ body.measuring #tab-pos .pos-scroll{flex:none;height:110px;min-height:0}
 .held-src{color:var(--blue);font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .held-total{font-weight:900;color:var(--danger)}
 .held-items{grid-column:1/-1;font-size:var(--fs-sm);color:var(--muted)}
+
+/* ---- v1.11：數量 1~9 快速鍵、可直接輸入數量 ---- */
+.picker-qty .qty-input{width:clamp(70px,16vw,96px);text-align:center;font-size:var(--fs-2xl);font-weight:900;padding:4px;border-radius:12px;-moz-appearance:textfield}
+.picker-qty .qty-input::-webkit-outer-spin-button,.picker-qty .qty-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.qty-quick{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:6px;margin:8px 0 4px}
+.qty-quick-btn{border:2px solid var(--border);background:#fff4dc;border-radius:10px;padding:clamp(8px,1.8vw,12px) 0;font-size:var(--fs-xl);font-weight:900;color:var(--main2);cursor:pointer;font-family:inherit}
+.qty-quick-btn:active{transform:scale(.96)}
+.qty-quick-btn.active{background:var(--main);border-color:var(--main);color:#fff}
+@media (max-width:420px){ .qty-quick{grid-template-columns:repeat(9,minmax(0,1fr));gap:4px} .qty-quick-btn{font-size:var(--fs-lg)} }
 </style>

@@ -106,9 +106,9 @@ test('外殼載入 GAS、跨網域 postMessage 握手、選擇藍牙出單機、
   // 步驟 2：確認數量（預設 1）
   await frame.waitForSelector('#itemOverlay.show');
   assert.equal(await frame.isVisible('#orderOverlay'), false);
-  assert.equal(await frame.innerText('#pickerQtyNum'), '1');
+  assert.equal(await frame.inputValue('#pickerQtyNum'), '1');
   await frame.click('.picker-qty .qty-btn:not(.minus)');
-  assert.equal(await frame.innerText('#pickerQtyNum'), '2');
+  assert.equal(await frame.inputValue('#pickerQtyNum'), '2');
   await frame.click('.note-chip >> text=先做');
   assert.match(await frame.innerText('#pickerTotal'), /90 元/);
   await frame.click('#pickerMoreBtn'); // 加入並繼續點
@@ -935,6 +935,34 @@ test('v1.10 ＋訂單來源 / ＋新購同一顆按鈕；訂單號碼長按：�
   await frame.click('#orderCodeInput', { button: 'right' });
   await frame.click('#codeScanBtn');
   await frame.waitForFunction((no) => loadedOrder && loadedOrder.order_no === no, held.order_no);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('v1.11 確認數量：1~9 快速鍵、＋/－、直接輸入數量（預設 1）', async () => {
+  const { ctx, frame, errors } = await openPos(true);
+  await frame.click('#newOrderBtn');
+  await pickSource(frame, '現場點餐');
+  await frame.click('.item-btn[data-id="custard"]');
+  await frame.waitForSelector('#itemOverlay.show');
+  assert.equal(await frame.inputValue('#pickerQtyNum'), '1');
+  assert.deepEqual(await frame.$$eval('#qtyQuick .qty-quick-btn', (b) => b.map((x) => x.innerText.trim())), ['1', '2', '3', '4', '5', '6', '7', '8', '9']);
+  assert.equal(await frame.getAttribute('#qtyQuick .qty-quick-btn[data-q="1"]', 'class'), 'qty-quick-btn active');
+  await frame.click('#qtyQuick .qty-quick-btn[data-q="6"]');
+  assert.equal(await frame.inputValue('#pickerQtyNum'), '6');
+  assert.match(await frame.innerText('#pickerTotal'), /270 元/);
+  await frame.click('.picker-qty .qty-btn:not(.minus)');
+  assert.equal(await frame.inputValue('#pickerQtyNum'), '7');
+  await frame.fill('#pickerQtyNum', '12');   // 直接輸入
+  assert.match(await frame.innerText('#pickerTotal'), /540 元/);
+  await frame.click('#pickerDoneBtn');
+  assert.equal(await frame.evaluate(() => cartItems()[0].qty), 12);
+  // 修改：開啟時顯示目前數量
+  await frame.click('#cartArea .cart-row', { button: 'right' });
+  assert.equal(await frame.inputValue('#pickerQtyNum'), '12');
+  await frame.click('#qtyQuick .qty-quick-btn[data-q="3"]');
+  await frame.click('#pickerDoneBtn');
+  assert.equal(await frame.evaluate(() => cartItems()[0].qty), 3);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
