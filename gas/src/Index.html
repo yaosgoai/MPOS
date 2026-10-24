@@ -33,10 +33,9 @@
   <div class="pos-single">
     <section class="panel">
       <div class="pos-head pos-bar">
-        <button type="button" id="sourceBar" class="source-chip" style="display:none" onclick="openSourcePicker(false)" title="點一下變更訂單來源"><b id="sourceName"></b></button>
-        <input id="orderCodeInput" data-scan-submit="loadOrderByCode" enterkeyhint="search" placeholder="訂單號碼 / 刷訂單條碼" onkeydown="if(event.key==='Enter'){event.preventDefault();loadOrderByCode();}" oninput="orderCodeAuto()">
+        <button type="button" id="newOrderBtn" class="main-btn new-order-btn" title="點：新購（未選來源時先選訂單來源）／長按：變更訂單來源"><span class="nb-plus">＋</span><span id="sourceName">訂單來源</span></button>
+        <input id="orderCodeInput" data-noscan data-scan-submit="loadOrderByCode" enterkeyhint="search" placeholder="訂單號碼（長按更多）" onkeydown="if(event.key==='Enter'){event.preventDefault();loadOrderByCode();}" oninput="orderCodeAuto()">
         <button class="main-btn gray-btn code-btn" onclick="loadOrderByCode()">查詢</button>
-        <button id="newOrderBtn" class="main-btn new-order-btn" onclick="openOrderPicker()">＋新購</button>
       </div>
       <div id="loadedBar" class="loaded-bar" style="display:none">
         <span id="loadedOrderTag" class="loaded-tag"></span>
@@ -49,7 +48,7 @@
         <button class="small-btn blue-btn" onclick="showHistory(customerPhone)">歷史</button>
       </div>
       <div class="pos-scroll" id="posScroll">
-      <div id="cartArea" class="cart-empty">尚未點選商品，請按「＋新購」</div>
+      <div id="cartArea" class="cart-empty">請先按「＋訂單來源」開始新訂單</div>
       <div id="lastOrderBar" class="last-order-bar" style="display:none"></div>
       <div id="posMsg" class="message"></div>
       <div id="receiptPreview" class="receipt-preview"></div>
@@ -58,9 +57,9 @@
       <div class="total-box"><div class="total-label">總金額</div><div class="total-value" id="totalValue">0 元</div></div>
       <div class="action-row action-row-4">
         <button id="checkoutBtn" class="main-btn print-btn" onclick="openCheckout()">找零結帳</button>
-        <button id="quickPayBtn" class="main-btn blue-btn" onclick="openQuickPay('pay')">結帳</button>
-        <button id="holdBtn" class="main-btn preview-btn" onclick="openQuickPay('hold')">掛單</button>
-        <button id="resetBtn" class="main-btn clear-btn" onclick="resetDraft()">重置</button>
+        <button id="quickPayBtn" class="main-btn blue-btn" onclick="openQuickPay('pay')">直接結帳</button>
+        <button id="holdBtn" class="main-btn preview-btn" onclick="openQuickPay('hold')">訂單暫存</button>
+        <button id="resetBtn" class="main-btn clear-btn" onclick="resetDraft()">重新訂單</button>
       </div>
     </section>
   </div>
@@ -160,6 +159,21 @@
       <button id="callHistoryBtn" class="source-btn" onclick="callShowHistory()">2. 查詢歷史交易品項</button>
       <button class="main-btn gray-btn" onclick="callSaveName()">只儲存客戶名稱</button>
     </div>
+  </div>
+</div>
+
+<!-- ================= 訂單號碼長按：刷訂單條碼 / 帶暫存訂單 ================= -->
+<div id="codeMenuOverlay" class="checkout-overlay">
+  <div class="checkout-modal source-modal">
+    <div class="checkout-head">
+      <div class="checkout-title">訂單號碼</div>
+      <button class="checkout-close" onclick="closeCodeMenu()">關閉</button>
+    </div>
+    <div class="source-grid">
+      <button type="button" id="codeScanBtn" class="source-btn" onclick="codeMenuScan()">刷訂單條碼</button>
+      <button type="button" id="codeHeldBtn" class="source-btn" onclick="codeMenuHeld()">帶暫存訂單</button>
+    </div>
+    <div id="heldArea" class="held-area"></div>
   </div>
 </div>
 
@@ -705,6 +719,7 @@ async function bootstrap(){
 
 window.addEventListener('load', async function(){
   attachScanButtons(document);
+  initPosBar();
   detectBridge();
   try{ await bootstrap(); await prefLoadAll(); applySettingsToUi(); syncUiPrefControls(); fitScreen(); await Draft.restore(); refreshCalls(); }
   catch(e){ $('loadingMask').innerText='資料載入失敗：'+e.message+'\n請確認已執行 setup() 並重新整理。'; return; }
@@ -848,19 +863,18 @@ function deletePickerLine(){ if(picker&&picker.key){ cart=cart.filter(function(l
 /* 主畫面訂單清單 */
 function changeQty(key,d){ cart.forEach(function(l){ if(l.key===key) l.qty+=d; }); cart=cart.filter(function(l){return l.qty>0;}); renderCart(); }
 function renderCart(){
-  $('sourceBar').style.display = (orderSource || loadedOrder) ? 'inline-flex' : 'none';
-  $('sourceName').innerText = orderSource || '選擇來源';
+  $('sourceName').innerText = orderSource || '訂單來源';
+  $('newOrderBtn').classList.toggle('has-source', !!orderSource);
   $('loadedBar').style.display = loadedOrder ? 'flex' : 'none';
-  $('loadedOrderTag').innerText = loadedOrder ? '叫回單號 '+loadedOrder.order_no+'（未付款）' : '';
+  $('loadedOrderTag').innerText = loadedOrder ? '暫存訂單 '+loadedOrder.order_no+'（未付款）' : '';
   $('cancelLoadedBtn').style.display = loadedOrder ? 'inline-block' : 'none';
   $('customerBar').style.display = customerPhone ? 'flex' : 'none';
   scheduleFit();
   $('customerPhoneText').innerText = fmtPhone(customerPhone);
   if(document.activeElement!==$('customerNameInput')) $('customerNameInput').value = customerName || '';
-  $('newOrderBtn').innerText = '＋新購';
   Draft.save();
   var items=cartItems(), area=$('cartArea');
-  if(!items.length){ area.className='cart-empty'; area.innerHTML='尚未點選商品，請按「＋新購」'; $('totalValue').innerText='0 元'; return; }
+  if(!items.length){ area.className='cart-empty'; area.innerHTML= orderSource ? '尚未點選商品，請按「＋'+escapeHtml(orderSource)+'」新購' : '請先按「＋訂單來源」開始新訂單'; $('totalValue').innerText='0 元'; return; }
   var html='<div class="cart-grid"><div class="cart-head"><span>品名</span><span class="num">單價</span><span class="num">數量</span><span class="num">小計</span></div>';
   items.forEach(function(l, idx){
     var n=lineNote(l);
@@ -879,11 +893,11 @@ function newDraftRef(){ return 'D'+Date.now().toString(36)+Math.random().toStrin
 function clearCart(withMsg){
   cart=[]; orderSource=''; customerPhone=''; customerName=''; loadedOrder=null; draftRef=newDraftRef(); $('orderNoteInput').value='';
   Draft.clear(); renderCart();
-  if(withMsg){ showMsg('posMsg','ok','目前單據已重置。'); $('receiptPreview').style.display='none'; }
+  if(withMsg){ showMsg('posMsg','ok','訂單清空新單'); $('receiptPreview').style.display='none'; }
 }
 function resetDraft(){
   if(!cartItems().length && !orderSource && !customerPhone && !$('orderNoteInput').value.trim()){ clearCart(true); focusOrderCode(); return; }
-  if(!confirm('確定要重置目前單據？已點的品項與備註都會清除。')) return;
+  if(!confirm('確定要清空目前訂單，重新開始新訂單？已點的品項與備註都會清除。')) return;
   clearCart(true);
   showLastOrder(null);
   focusOrderCode();
@@ -971,15 +985,15 @@ var Draft={
 var quickPayMode='pay';
 function openQuickPay(mode){
   quickPayMode = mode==='hold' ? 'hold' : 'pay';
-  if(!cartItems().length){ showMsg('posMsg','err','尚未點選商品，請先按「＋新購」。'); return; }
+  if(!cartItems().length){ showMsg('posMsg','err','尚未點選商品，請先按左上的橘色按鈕新購。'); return; }
   if(!orderSource){ openSourcePicker(false); return; }
   if(quickPayMode==='hold' && loadedOrder){ /* 叫回的單再掛單＝更新內容 */ }
   var hold = quickPayMode==='hold';
-  $('quickPayTitle').innerText = hold ? '掛單（未付款）' : '結帳';
+  $('quickPayTitle').innerText = hold ? '訂單暫存（未付款）' : '直接結帳';
   $('quickPayTotalLabel').innerText = hold ? '訂單金額（取餐時收款）' : '應收金額';
   $('quickPayQ').innerText = hold ? '是否列印取餐單？' : '是否列印單據？';
-  $('quickPayPrintBtn').innerText = hold ? '列印並掛單' : '列印並結帳';
-  $('quickPayNoPrintBtn').innerText = hold ? '不列印，直接掛單' : '不列印，直接結帳';
+  $('quickPayPrintBtn').innerText = hold ? '列印並暫存' : '列印並結帳';
+  $('quickPayNoPrintBtn').innerText = hold ? '不列印，直接暫存' : '不列印，直接結帳';
   $('quickPayTotal').innerText=money(total());
   $('quickPaySource').innerText=orderSource + (loadedOrder ? '（單號 '+loadedOrder.order_no+'）' : '');
   $('quickPayCustomerRow').style.display = customerPhone ? 'flex' : 'none';
@@ -999,7 +1013,7 @@ async function createOrder(printFlag, pay, hold){
   if(!orderSource){showMsg('posMsg','err','請先選擇訂單來源。'); openSourcePicker(false); return;}
   busy=true;
   Draft.save();
-  showMsg('posMsg','ok', hold?'掛單中...':(printFlag?'結帳列印中...':'結帳中...'));
+  showMsg('posMsg','ok', hold?'訂單暫存中...':(printFlag?'結帳列印中...':'結帳中...'));
   try{
     var payload=orderPayload(printFlag, pay);
     if(hold) payload.hold=true;
@@ -1019,12 +1033,41 @@ async function createOrder(printFlag, pay, hold){
     closeCheckout(false);
     clearCart(false);
     showLastOrder(o);
-    toast(printErr ? '已上傳，但列印失敗' : (hold ? '已掛單 '+o.order_no : '訂單 '+o.order_no+' 已結帳'));
+    toast(printErr ? '已上傳，但列印失敗' : (hold ? '已暫存訂單 '+o.order_no : '訂單 '+o.order_no+' 已結帳'));
     if(o.customer_phone) refreshCalls();
   }catch(e){
     showMsg('posMsg','err','上傳失敗：'+e.message+'\n\n單據仍暫存在本機，確認網路後可再按結帳重試（不會重複建單）。');
     $('checkoutMsg').innerText=e.message;
   }finally{ busy=false; }
+}
+
+/* ---------- POS 上方：＋訂單來源 / ＋新購（同一顆按鈕）、訂單號碼長按選單 ---------- */
+function initPosBar(){
+  bindLongPress($('newOrderBtn'), function(){ openSourcePicker(false); }, function(){ openOrderPicker(); });
+  var inp=$('orderCodeInput');
+  bindLongPress(inp, function(){ try{ inp.blur(); }catch(e){} openCodeMenu(); }, null);
+}
+function openCodeMenu(){
+  $('heldArea').innerHTML='';
+  $('codeMenuOverlay').classList.add('show');
+}
+function closeCodeMenu(){ $('codeMenuOverlay').classList.remove('show'); }
+function codeMenuScan(){ closeCodeMenu(); scanInto($('orderCodeInput')); }
+var heldList=[];
+async function codeMenuHeld(){
+  var el=$('heldArea');
+  el.innerHTML='<div class="cart-empty">讀取暫存訂單...</div>';
+  try{
+    heldList=(await api('apiHeldOrders', 7)).orders||[];
+    if(!heldList.length){ el.innerHTML='<div class="cart-empty">目前沒有暫存訂單</div>'; return; }
+    el.innerHTML=heldList.map(function(o,i){
+      return '<button type="button" class="held-row" data-i="'+i+'"><span class="held-no">'+escapeHtml(o.order_no)+'</span>'+
+        '<span class="held-src">'+escapeHtml(o.order_source||'')+(o.customer_phone?'　'+escapeHtml([o.customer_name||'', fmtPhone(o.customer_phone)].join(' ').trim()):'')+'</span>'+
+        '<span class="held-total">'+money(o.total)+'</span>'+
+        '<span class="held-items">'+escapeHtml(String(o.created_at||'').slice(5,16))+'　'+(o.items||[]).map(function(x){ return escapeHtml(x.name)+'×'+x.qty; }).join('、')+'</span></button>';
+    }).join('');
+    el.querySelectorAll('.held-row').forEach(function(b){ b.onclick=function(){ var o=heldList[+b.dataset.i]; closeCodeMenu(); $('orderCodeInput').value=o.order_no; loadOrderByCode(); }; });
+  }catch(e){ el.innerHTML='<div class="message err" style="display:block">'+escapeHtml(e.message)+'</div>'; }
 }
 
 /* ---------- 訂單條碼：叫回訂單（未付款 → 帶回結帳；已付款 → 檢視 / 補印） ---------- */
@@ -1297,7 +1340,7 @@ function openCancel(o, after){
   cancelCtx={order:o, type:'', reason:'', after:after||null};
   $('cancelTitle').innerText='取消訂單 '+o.order_no;
   $('cancelSummary').innerHTML='<b>'+money(o.total)+'</b>　'+escapeHtml(o.order_source||'')+'　'+
-    (o.status==='completed'?'已完成　':'')+(isPaid(o)?'<span style="color:#237a3b">已付款</span>':'未付款（掛單）')+
+    (o.status==='completed'?'已完成　':'')+(isPaid(o)?'<span style="color:#237a3b">已付款</span>':'未付款（暫存訂單）')+
     (o.customer_phone?'<br>客戶：'+escapeHtml([o.customer_name||'', fmtPhone(o.customer_phone)].join(' ').trim()):'')+
     '<br><span class="hint">'+(o.items||[]).map(function(i){ return escapeHtml(i.name)+'×'+i.qty; }).join('、')+'</span>';
   document.querySelectorAll('#cancelOverlay .cancel-type').forEach(function(b){ b.classList.remove('active'); });
@@ -1363,7 +1406,7 @@ async function cancelLoadedOrder(){
   if(!loadedOrder) return;
   try{
     var o=(await api('apiLoadOrder', loadedOrder.order_no)).order;
-    openCancel(o, function(x){ clearCart(false); showMsg('posMsg','ok','掛單 '+x.order_no+' 已取消（'+(CANCEL_TYPE_LABEL[x.cancel_type]||'')+'：'+x.cancel_reason+'）'); });
+    openCancel(o, function(x){ clearCart(false); showMsg('posMsg','ok','暫存訂單 '+x.order_no+' 已取消（'+(CANCEL_TYPE_LABEL[x.cancel_type]||'')+'：'+x.cancel_reason+'）'); });
   }catch(e){ showMsg('posMsg','err',e.message); }
 }
 
@@ -1409,7 +1452,7 @@ async function loadCancelStats(){
 /* ---------- 結帳鍵盤 ---------- */
 function openCheckout(){
   $('orderOverlay').classList.remove('show');
-  if(!cartItems().length){showMsg('posMsg','err','尚未點選商品，請先按「＋新購」。');return;}
+  if(!cartItems().length){showMsg('posMsg','err','尚未點選商品，請先按左上的橘色按鈕新購。');return;}
   if(!orderSource){ openSourcePicker(false); return; }
   checkoutCash='';checkoutChangeAmount=0;$('checkoutMsg').innerText='';
   $('checkoutTotal').innerText=money(total());

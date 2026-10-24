@@ -386,11 +386,12 @@ test('重置：清空目前單據（含訂單來源與備註）', async () => {
   const { ctx, frame } = await openPos(true);
   await addLine(frame, 'cheese', 1);
   await frame.fill('#orderNoteInput', '測試備註');
-  assert.equal(await frame.isVisible('#sourceBar'), true);
+  assert.equal(await frame.innerText('#sourceName'), '現場點餐');
   await frame.click('#resetBtn');
   await frame.waitForFunction(() => document.querySelectorAll('#cartArea .cart-row').length === 0);
   assert.equal(await frame.inputValue('#orderNoteInput'), '');
-  assert.equal(await frame.isVisible('#sourceBar'), false);
+  assert.equal((await frame.innerText('#newOrderBtn')).replace(/\s/g, ''), '＋訂單來源');
+  assert.match(await frame.innerText('#posMsg'), /訂單清空新單/);
   await frame.click('#newOrderBtn');
   await frame.waitForSelector('#sourceOverlay.show'); // 重置後要重新選來源
   await ctx.close();
@@ -506,9 +507,9 @@ test('掛單（未付款）→ 訂單條碼叫回 → 找零結帳（同一單�
   await addLine(frame, 'custard', 2);
   await frame.click('#holdBtn');
   await frame.waitForSelector('#quickPayOverlay.show');
-  assert.equal(await frame.innerText('#quickPayTitle'), '掛單（未付款）');
+  assert.equal(await frame.innerText('#quickPayTitle'), '訂單暫存（未付款）');
   await frame.click('#quickPayPrintBtn');
-  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('已掛單'));
+  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('已暫存訂單'));
   const held = JSON.parse(JSON.stringify(h.g.apiOrders(''))).orders[0];
   assert.equal(held.pay_status, 'unpaid');
   const job = (await page.evaluate(() => window.__nativeCalls.filter((c) => c.method === 'print'))).pop().params.job;
@@ -563,7 +564,7 @@ test('來電：清單顯示、長按新增來電點餐（記錄電話 / 名稱�
   await frame.click('#pickerDoneBtn');
   await frame.click('#holdBtn');
   await frame.click('#quickPayNoPrintBtn');
-  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('已掛單'));
+  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('已暫存訂單'));
   const o = JSON.parse(JSON.stringify(h.g.apiOrders(''))).orders[0];
   assert.deepEqual([o.order_source, o.customer_phone, o.customer_name, o.pay_status], ['來電點餐', '0912000111', '陳小姐', 'unpaid']);
 
@@ -628,13 +629,13 @@ test('v1.5 版面：標題不顯示版本 / 藍牙（移到設定）、來電列
   assert.equal(await frame.locator('#tab-settings #bridgeChip').count(), 1);
   assert.equal(await frame.locator('#tab-settings #gasVersionText').count(), 1);
   assert.equal(await frame.locator('.call-bar button.call-add').count(), 0);
-  assert.equal((await frame.innerText('#newOrderBtn')).trim(), '＋新購');
+  assert.equal((await frame.innerText('#newOrderBtn')).replace(/\s/g, ''), '＋訂單來源');
   await frame.click('#newOrderBtn');
   await pickSource(frame, '來電點餐');
   await frame.click('#orderOverlay .checkout-close');
   // 上方一列：來源 + 訂單條碼 + 新購；沒有「訂單」標題
   assert.equal(await frame.locator('.pos-title').count(), 0);
-  const tops = await frame.evaluate(() => ['sourceBar', 'orderCodeInput', 'newOrderBtn'].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); return Math.round(r.top + r.height / 2); }));
+  const tops = await frame.evaluate(() => ['orderCodeInput', 'newOrderBtn'].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); return Math.round(r.top + r.height / 2); }));
   assert.ok(Math.max(...tops) - Math.min(...tops) <= 4, '來源、訂單條碼、新購要在同一列 ' + tops);
   // 備註：沒有標題、沒有掃描按鈕（長按掃描）
   assert.equal(await frame.locator('#tab-pos h2', { hasText: '整張訂單備註' }).count(), 0);
@@ -643,7 +644,7 @@ test('v1.5 版面：標題不顯示版本 / 藍牙（移到設定）、來電列
   const yTotal = await frame.evaluate(() => document.querySelector('#tab-pos .total-box').getBoundingClientRect().top);
   assert.ok(yNote <= yTotal, '整張訂單備註要在總金額上方');
   assert.match(await frame.innerText('.pos-bar'), /來電點餐/);
-  await frame.click('#sourceBar');
+  await frame.click('#newOrderBtn', { button: 'right' });   // 長按：變更訂單來源
   await frame.waitForSelector('#sourceOverlay.show');
   assert.deepEqual(errors, []);
   await ctx.close();
@@ -705,7 +706,7 @@ test('v1.5 條碼設定立即生效（不必按儲存）；訂單條碼刷完（
   await addLine(f2, 'custard', 1);
   await f2.click('#holdBtn');
   await f2.click('#quickPayPrintBtn');
-  await f2.waitForFunction(() => document.getElementById('posMsg').innerText.includes('已掛單'));
+  await f2.waitForFunction(() => document.getElementById('posMsg').innerText.includes('已暫存訂單'));
   const held = JSON.parse(JSON.stringify(h.g.apiOrders(''))).orders[0];
   await f2.fill('#orderCodeInput', h.g.barcodeNoToEan13(held.barcode_no));
   await f2.waitForFunction(() => document.getElementById('loadedOrderTag').innerText.includes('未付款'));
@@ -862,7 +863,7 @@ test('v1.7 取消訂單：叫回的掛單可取消並清空；客戶退單次數
   await frame.click('#pickerDoneBtn');
   await frame.click('#holdBtn');
   await frame.click('#quickPayPrintBtn');
-  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('已掛單'));
+  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('已暫存訂單'));
   const held = JSON.parse(JSON.stringify(h.g.apiOrders(''))).orders.find((x) => x.customer_phone === '0933444555');
   await frame.fill('#orderCodeInput', held.order_no);
   await frame.press('#orderCodeInput', 'Enter');
@@ -887,6 +888,53 @@ test('v1.7 取消訂單：叫回的掛單可取消並清空；客戶退單次數
   await frame.waitForSelector('#infoOverlay.show');
   assert.match(await frame.innerText('#infoBody'), /退單 1 次（退單率 100%）/);
   assert.match(await frame.innerText('#infoBody'), /客戶取消：客戶未取餐/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('v1.10 ＋訂單來源 / ＋新購同一顆按鈕；訂單號碼長按：刷訂單條碼 / 帶暫存訂單；按鈕改名', async () => {
+  const { ctx, page, frame, errors } = await openPos(true, FAKE_SCANNER);
+  await setPrinter(page);
+  assert.deepEqual(await frame.$$eval('.action-row-4 .main-btn', (b) => b.map((x) => x.innerText.trim())), ['找零結帳', '直接結帳', '訂單暫存', '重新訂單']);
+  assert.equal(await frame.locator('#sourceBar').count(), 0);
+  assert.equal(await frame.locator('.pos-bar .scan-btn').count(), 0, '訂單號碼旁不再有條碼按鈕');
+  assert.equal((await frame.innerText('#newOrderBtn')).replace(/\s/g, ''), '＋訂單來源');
+  await frame.click('#newOrderBtn');                 // 未選來源 → 先選來源，再選商品
+  await pickSource(frame, '來電點餐');
+  await frame.waitForSelector('#orderOverlay.show');
+  await frame.click('.item-btn[data-id="custard"]');
+  await frame.click('#pickerDoneBtn');
+  assert.equal((await frame.innerText('#newOrderBtn')).replace(/\s/g, ''), '＋來電點餐');
+  await frame.click('#newOrderBtn');                 // 已選來源 → 直接新購
+  await frame.waitForSelector('#orderOverlay.show');
+  await frame.click('#orderOverlay .checkout-close');
+  // 訂單暫存
+  await frame.click('#holdBtn');
+  await frame.click('#quickPayNoPrintBtn');
+  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('已暫存訂單'));
+  const held = JSON.parse(JSON.stringify(h.g.apiHeldOrders(7))).orders[0];
+  // 長按訂單號碼 → 帶暫存訂單
+  await frame.click('#orderCodeInput', { button: 'right' });
+  await frame.waitForSelector('#codeMenuOverlay.show');
+  await frame.click('#codeHeldBtn');
+  const row = frame.locator('#heldArea .held-row', { hasText: held.order_no });
+  await row.waitFor();
+  assert.match(await row.innerText(), /卡士達×1/);
+  await row.click();
+  await frame.waitForFunction(() => document.getElementById('loadedOrderTag').innerText.includes('暫存訂單'));
+  assert.equal(await frame.evaluate(() => loadedOrder.order_no), held.order_no);
+  // 重新訂單 → 全部清空、回到 ＋訂單來源
+  await frame.fill('#orderCodeInput', '123');
+  await frame.click('#resetBtn');
+  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('訂單清空新單'));
+  assert.equal(await frame.inputValue('#orderCodeInput'), '');
+  assert.equal((await frame.innerText('#newOrderBtn')).replace(/\s/g, ''), '＋訂單來源');
+  assert.equal(await frame.evaluate(() => cartItems().length + (loadedOrder ? 1 : 0)), 0);
+  // 長按訂單號碼 → 刷訂單條碼 → 直接查詢帶回
+  await frame.evaluate((code) => { window.__nextScan = { status: 'ok', text: code, format: 'ean_13', engine: 'mlkit' }; }, h.g.barcodeNoToEan13(held.barcode_no));
+  await frame.click('#orderCodeInput', { button: 'right' });
+  await frame.click('#codeScanBtn');
+  await frame.waitForFunction((no) => loadedOrder && loadedOrder.order_no === no, held.order_no);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

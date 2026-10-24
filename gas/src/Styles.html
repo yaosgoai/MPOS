@@ -372,4 +372,17 @@ body.measuring #tab-pos .pos-scroll{flex:none;height:110px;min-height:0}
 .c-qty{font-weight:900;color:var(--main2)}
 .c-sub{font-weight:900;color:var(--danger)}
 .cart-hint{border-top:1px solid #f0dfc2;padding:5px 10px;font-size:var(--fs-xs);color:var(--muted);text-align:center;background:#fff8e8}
+
+/* ---- v1.10：＋訂單來源 / ＋新購 合併為一顆橘色圓角按鈕；訂單號碼長按選單 ---- */
+.pos-bar .new-order-btn{border-radius:999px;background:var(--accent);color:#fff;display:inline-flex;align-items:center;gap:4px;max-width:48%;overflow:hidden;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.pos-bar .new-order-btn #sourceName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pos-bar .new-order-btn .nb-plus{font-weight:900}
+.pos-bar .new-order-btn.has-source{box-shadow:0 0 0 3px rgba(216,138,40,.25),0 4px 12px rgba(216,138,40,.35)}
+.held-area{margin-top:10px;display:grid;gap:8px;max-height:55vh;overflow:auto}
+.held-row{display:grid;grid-template-columns:auto 1fr auto;gap:2px 10px;text-align:left;width:100%;border:2px solid var(--border);border-radius:12px;background:#fff;padding:10px 12px;font-family:inherit;font-size:var(--fs-md);cursor:pointer}
+.held-row:active{background:#ffe6b8}
+.held-no{font-weight:900;color:var(--main2)}
+.held-src{color:var(--blue);font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.held-total{font-weight:900;color:var(--danger)}
+.held-items{grid-column:1/-1;font-size:var(--fs-sm);color:var(--muted)}
 </style>

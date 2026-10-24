@@ -128,7 +128,7 @@ function apiCreateOrder(payload) {
           var existing = getOrderWithItems_(dup);
           var djob = buildPrintJob(existing, st.settings, st.layout);
           existing.receipt = djob.preview;
-          return { order: existing, print_job: shouldPrint ? djob : null, duplicate: true, message: (hold ? '已掛單' : '訂單已建立') + '（重送）' };
+          return { order: existing, print_job: shouldPrint ? djob : null, duplicate: true, message: (hold ? '已暫存訂單' : '訂單已建立') + '（重送）' };
         }
       }
       var now = nowText_();
@@ -198,7 +198,7 @@ function apiCreateOrder(payload) {
       order: order,
       print_job: shouldPrint ? job : null,
       updated: isUpdate,
-      message: hold ? '已掛單（未付款）' : (isUpdate ? '訂單已結帳' : '訂單已建立'),
+      message: hold ? '已暫存訂單（未付款）' : (isUpdate ? '訂單已結帳' : '訂單已建立'),
     };
   });
 }
@@ -211,6 +211,24 @@ function apiLoadOrder(input) {
     var o = r.order;
     var editable = o.status !== 'cancelled' && (o.pay_status || 'paid') === 'unpaid';
     return { order: o, editable: editable };
+  });
+}
+
+/** 暫存訂單（未付款、未取消）清單：最近 days 天，最新在前 */
+function apiHeldOrders(days) {
+  return wrap_(function () {
+    var n = safeInt_(days, 7, 1, 60);
+    var t = todayText_().split('-');
+    var fromText = new Date(Date.UTC(+t[0], +t[1] - 1, +t[2]) - (n - 1) * 86400000).toISOString().substring(0, 10);
+    var itemsAll = readTable_('order_items');
+    var list = readTable_('orders').filter(function (o) {
+      return String(o.pay_status || '') === 'unpaid' && o.status !== 'cancelled' && String(o.order_date) >= fromText;
+    }).sort(function (a, b) { return b.id - a.id; }).slice(0, 50).map(function (o) {
+      var x = strip_(o);
+      x.items = itemsAll.filter(function (i) { return Number(i.order_id) === Number(o.id); }).map(strip_);
+      return x;
+    });
+    return { orders: list };
   });
 }
 

@@ -411,3 +411,15 @@ test('退單分析：退單率、依原因 / 類型 / 來源 / 客戶 / 日期�
   assert.equal(plain(g.apiRecentCalls()).calls[0].cancel_count, 2);
   assert.equal(plain(g.apiCallLog('2026-07-04')).calls[0].cancel_count, 2);
 });
+
+test('暫存訂單清單：只列未付款且未取消', () => {
+  const g = fresh(() => new Date('2026-07-04T02:00:00Z'));
+  const a = plain(g.apiCreateOrder({ order_source: '現場點餐', items: [{ id: 'cheese', qty: 1 }], hold: true, print: false }));
+  assert.match(a.message, /已暫存訂單/);
+  const b = plain(g.apiCreateOrder({ order_source: '現場點餐', items: [{ id: 'cheese', qty: 2 }], hold: true, print: false })).order;
+  plain(g.apiCreateOrder({ order_source: '現場點餐', items: [{ id: 'cheese', qty: 1 }], print: false }));
+  g.apiCancelOrder({ order_id: b.id, type: 'store', reason: '其他' });
+  const list = plain(g.apiHeldOrders(7)).orders;
+  assert.deepEqual(list.map((o) => o.order_no), [a.order.order_no]);
+  assert.equal(list[0].items.length, 1);
+});
