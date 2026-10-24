@@ -103,6 +103,8 @@ jobs:
             echo "::warning::未設定 MPOS_KEYSTORE_BASE64，APK 將使用 debug 簽章（每次編譯簽章不同，無法覆蓋安裝）"
           fi
 
+      # 只跑 App 的 JVM 單元測試：條碼模組的 ZxingFallbackTest 使用 java.awt / javax.imageio，
+      # Android 單元測試環境沒有這些類別，無法在 Gradle 編譯（模組規則測試另以 node 執行）
       - name: 單元測試 + 編譯 Release APK
         working-directory: android
         env:
@@ -111,7 +113,7 @@ jobs:
           MPOS_KEY_PASSWORD: ${{ secrets.MPOS_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon testDebugUnitTest assembleRelease \
+          ./gradlew --no-daemon :app:testDebugUnitTest assembleRelease \
             -PshellUrl="$SHELL_URL" -PversionCode=${{ steps.ver.outputs.code }} -PversionName=${{ steps.ver.outputs.name }}
           mkdir -p ../dist
           cp app/build/outputs/apk/release/app-release.apk "../dist/MPOS-${{ steps.ver.outputs.name }}-b${{ steps.ver.outputs.code }}.apk"
