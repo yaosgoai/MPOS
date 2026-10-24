@@ -7,6 +7,7 @@ import android.webkit.WebView;
 
 import androidx.test.ext.junit.rules.ActivityScenarioRule;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.webkit.WebViewFeature;
 
 import org.json.JSONObject;
 import org.junit.Rule;
@@ -58,6 +59,11 @@ public class ShellLoadTest {
         // 非同步橋接往返（模擬器沒有藍牙，只驗證結果能回傳）
         eval("window.__r=null; var __o=MPOSNative.onResult; MPOSNative.onResult=function(i,ok,p){ if(i==='t1'){window.__r={ok:ok,p:p};} else __o(i,ok,p); }; AndroidPOS.call('t1','getInfo','{}'); true");
         waitFor("!!window.__r && window.__r.ok === true", 15000, "橋接 getInfo 回傳");
+
+        // 條碼模組 WebView 橋接：WebView 支援 WEB_MESSAGE_LISTENER 時，外殼頁面要有 window.BarcodeBridge
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            assertEquals("true", eval("typeof window.BarcodeBridge === 'object' && typeof window.BarcodeBridge.postMessage === 'function'"));
+        }
 
         // GAS iframe 完成握手（需已部署 GAS 並執行過 setup）
         waitFor("window.MPOS_SHELL.gasReady === true", 120000, "GAS 後台握手");

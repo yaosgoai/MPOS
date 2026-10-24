@@ -2,7 +2,6 @@ package tw.mpos.app;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
-import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -20,14 +19,24 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import androidx.activity.ComponentActivity;
+import androidx.activity.OnBackPressedCallback;
+
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.Set;
+
+import tw.com.acepillar.barcode.WebViewScanBridge;
+
 /**
  * MPOS Android App：全螢幕 WebView 載入 GitHub Pages 外殼（index.html），
  * 外殼再以 iframe 載入 GAS 管理後台；列印透過 window.AndroidPOS 藍牙送出。
  */
-public class MainActivity extends Activity {
+public class MainActivity extends ComponentActivity {
     private static final int REQ_BT = 1001;
     private WebView webView;
     private PosBridge bridge;
+    private WebViewScanBridge scanBridge;
 
     public WebView getWebView() { return webView; }
 
@@ -58,6 +67,13 @@ public class MainActivity extends Activity {
 
         bridge = new PosBridge(webView, new BluetoothPrinter(this), BuildConfig.SHELL_URL);
         webView.addJavascriptInterface(bridge, "AndroidPOS");
+
+        // 條碼模組：只注入到外殼網域與 GAS 網頁（含 iframe），網頁的掃描按鈕會自動改用原生相機掃描
+        Set<String> scanOrigins = new LinkedHashSet<>(Arrays.asList(
+                PosBridge.originOf(BuildConfig.SHELL_URL),
+                "https://*.googleusercontent.com",
+                "https://script.google.com"));
+        scanBridge = WebViewScanBridge.install(this, webView, scanOrigins);
 
         webView.setWebChromeClient(new WebChromeClient());
         webView.setWebViewClient(new WebViewClient() {
@@ -90,6 +106,11 @@ public class MainActivity extends Activity {
 
         if (savedInstanceState != null) webView.restoreState(savedInstanceState);
         else webView.loadUrl(BuildConfig.SHELL_URL);
+
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() { showExitDialog(); }
+        });
 
         requestBluetoothPermission();
     }
@@ -128,8 +149,7 @@ public class MainActivity extends Activity {
         webView.saveState(outState);
     }
 
-    @Override
-    public void onBackPressed() {
+    private void showExitDialog() {
         new AlertDialog.Builder(this)
                 .setTitle("離開 POS？")
                 .setMessage("確定要關閉茉莉花鯛魚燒 POS 嗎？")

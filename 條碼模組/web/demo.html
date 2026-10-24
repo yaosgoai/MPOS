@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>條碼模組範例</title>
+<style>
+  body { font-family: "Microsoft JhengHei", "PingFang TC", sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; }
+  button, label.btn { display: inline-block; font-size: 16px; padding: 10px 16px; margin: 4px 4px 4px 0; border-radius: 8px; border: 1px solid #ccc; background: #f5f7fa; cursor: pointer; }
+  pre { background: #f5f7fa; padding: 12px; border-radius: 8px; white-space: pre-wrap; word-break: break-all; }
+</style>
+</head>
+<body>
+<h2>條碼模組範例（barcode-scan.js v<span id="ver"></span>）</h2>
+<p>
+  <button id="live" type="button">🔳 即時掃描</button>
+  <label class="btn">📷 用照片辨識<input id="photo" type="file" accept="image/*" capture="environment" hidden></label>
+</p>
+<pre id="out">尚未掃描</pre>
+<script src="barcode-scan.js"></script>
+<script>
+  document.getElementById('ver').textContent = BarcodeScan.version;
+  var out = document.getElementById('out');
+  function show(r) { out.textContent = r ? JSON.stringify(r, null, 2) : '找不到條碼'; }
+
+  // 即時掃描：App 內→原生掃描；可開相機→本頁掃描；不能開相機（iframe）→開掃描頁新視窗
+  document.getElementById('live').onclick = function () {
+    BarcodeScan.scanLive({
+      scanPageUrl: new URL('scan.html', location.href).href,   // 正式使用時改成部署後的掃描頁網址
+      confirm: true
+      // formats: ['itf', 'ean_13'],   // 只接受特定格式
+    }).then(show);
+  };
+
+  // 照片辨識
+  document.getElementById('photo').onchange = function (e) {
+    var f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    out.textContent = '辨識中…';
+    BarcodeScan.decodeFile(f).then(show, function (err) { out.textContent = '失敗：' + err.message; });
+  };
+</script>
+</body>
+</html>

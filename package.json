@@ -4,11 +4,12 @@
   "private": true,
   "description": "茉莉花鯛魚燒 POS：GAS 管理後台 + GitHub Pages 外殼 + Android App",
   "scripts": {
-    "test": "node --test tests/gas/logic.test.js tests/gas/api.test.js tests/e2e/shell.e2e.test.js",
-    "test:unit": "node --test tests/gas/logic.test.js tests/gas/api.test.js",
-    "test:e2e": "node --test tests/e2e/shell.e2e.test.js",
+    "test": "node scripts/sync_barcode.js && node --test tests/gas/logic.test.js tests/gas/api.test.js tests/e2e/shell.e2e.test.js && node 條碼模組/test/rules.test.js",
+    "test:unit": "node scripts/sync_barcode.js && node --test tests/gas/logic.test.js tests/gas/api.test.js && node 條碼模組/test/rules.test.js",
+    "test:e2e": "node scripts/sync_barcode.js && node --test tests/e2e/shell.e2e.test.js",
     "test:live": "node --test tests/live/live.test.js",
-    "dev": "node tests/e2e/harness.js"
+    "dev": "node tests/e2e/harness.js",
+    "sync:barcode": "node scripts/sync_barcode.js"
   },
   "devDependencies": {
     "@google/clasp": "3.4.1",

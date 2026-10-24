@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<iframe id="gasFrame" title="MPOS" allow="clipboard-write" referrerpolicy="no-referrer-when-downgrade"></iframe>
+<iframe id="gasFrame" title="MPOS" allow="camera; clipboard-write" referrerpolicy="no-referrer-when-downgrade"></iframe>
 <div id="overlay">
   <div class="spinner" id="spinner"></div>
   <div id="overlayTitle">POS 系統連線中...</div>
@@ -112,10 +112,11 @@
   }
 
   function nativeInfo(){
-    if(!window.AndroidPOS) return {native:false, shell:true, shell_version:SHELL_VERSION};
+    var shellUrl = location.origin + location.pathname;
+    if(!window.AndroidPOS) return {native:false, shell:true, shell_version:SHELL_VERSION, shell_url:shellUrl};
     var info = {};
     try{ info = JSON.parse(window.AndroidPOS.getInfo() || '{}'); }catch(e){ info = {}; }
-    info.native = true; info.shell = true; info.shell_version = SHELL_VERSION;
+    info.native = true; info.shell = true; info.shell_version = SHELL_VERSION; info.shell_url = shellUrl;
     checkApkUpdate(info);
     return info;
   }

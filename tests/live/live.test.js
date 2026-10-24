@@ -70,9 +70,13 @@ test('GitHub Pages 外殼載入 GAS 並完成握手', { skip: !PAGES_URL && '未
       if (!frame) await sleep(1000);
     }
     assert.ok(frame, '找不到 GAS POS 畫面 iframe');
-    await frame.waitForSelector('.item-btn', { timeout: 30000 });
+    // 商品在「新增訂購」視窗內：先開視窗再檢查商品按鈕
+    await frame.waitForSelector('#newOrderBtn', { timeout: 30000 });
+    await frame.click('#newOrderBtn');
+    await frame.waitForSelector('#orderOverlay.show .item-btn', { timeout: 30000 });
     const n = await frame.locator('.item-btn').count();
-    assert.ok(n > 0, '畫面上沒有商品按鈕');
+    assert.ok(n > 0, '新增訂購視窗沒有商品按鈕');
+    await frame.click('#orderOverlay .checkout-close');
     const chip = await frame.innerText('#bridgeChip');
     assert.match(chip, /網頁外殼/);
   } finally {

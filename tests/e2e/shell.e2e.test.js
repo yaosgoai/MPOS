@@ -177,3 +177,104 @@ test('RWD：手機直式 / 橫式、平板直式 / 橫式不超出畫面', async
     await ctx.close();
   }
 });
+
+/** 模擬 App 注入到 GAS iframe 的條碼模組原生橋接（WebViewScanBridge → window.BarcodeBridge） */
+const FAKE_SCANNER = () => {
+  if (window === window.top) return;
+  window.__scanRequests = [];
+  window.__nextScan = { status: 'ok', text: '2000007040014', format: 'ean_13', engine: 'mlkit' };
+  window.BarcodeBridge = {
+    onmessage: null,
+    postMessage(json) {
+      const req = JSON.parse(json);
+      window.__scanRequests.push(req);
+      setTimeout(() => {
+        const res = Object.assign({ t: 'barcode-result', v: 1, id: req.id }, window.__nextScan);
+        if (this.onmessage) this.onmessage({ data: JSON.stringify(res) });
+      }, 20);
+    },
+  };
+};
+
+test('條碼輸入：所有輸入欄位都有掃描按鈕，掃描結果帶回欄位（呼叫條碼模組）', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await ctx.addInitScript(FAKE_ANDROID);
+  await ctx.addInitScript(FAKE_SCANNER);
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto(h.shellUrl);
+  await page.waitForFunction(() => window.MPOS_SHELL && window.MPOS_SHELL.gasReady);
+  const frame = page.frames().find((f) => f.url().startsWith(h.gasUrl));
+  await frame.waitForFunction(() => window.__MPOS_READY__ === true && typeof BarcodeScan === 'object');
+
+  // 所有可輸入的欄位旁都有掃描按鈕（密碼、隱藏欄位、日期、版型表格除外）
+  const missing = await frame.evaluate(() => Array.from(document.querySelectorAll('input,textarea'))
+    .filter((el) => !['password', 'hidden', 'date', 'checkbox'].includes(el.type) && !el.closest('[data-noscan]'))
+    .filter((el) => !(el.parentNode.classList.contains('scan-wrap') && el.parentNode.querySelector('.scan-btn')))
+    .map((el) => el.id || el.name || el.outerHTML.slice(0, 60)));
+  assert.deepEqual(missing, []);
+  assert.equal(await frame.locator('#pinInput + .scan-btn').count(), 0, '密碼欄不應有掃描按鈕');
+
+  // 整張訂單備註（textarea）：掃描後帶回
+  await frame.click('#orderNoteInput + .scan-btn');
+  await frame.waitForFunction(() => document.getElementById('orderNoteInput').value === '2000007040014');
+  // 再掃一次：textarea 換行附加
+  await frame.evaluate(() => { window.__nextScan = { status: 'ok', text: 'ABC-123', format: 'code_128', engine: 'mlkit' }; });
+  await frame.click('#orderNoteInput + .scan-btn');
+  await frame.waitForFunction(() => document.getElementById('orderNoteInput').value === '2000007040014\nABC-123');
+
+  // 新增訂購視窗內的此項備註
+  await frame.click('#newOrderBtn');
+  await frame.click('#lineNoteInput + .scan-btn');
+  await frame.waitForFunction(() => document.getElementById('lineNoteInput').value === 'ABC-123');
+  await frame.click('#orderOverlay .checkout-close');
+
+  // 今日訂單：掃描小票 EAN13 → 自動查詢
+  const o = JSON.parse(JSON.stringify(h.g.apiCreateOrder({ items: [{ id: 'cheese', qty: 1 }], print: false }))).order;
+  await frame.evaluate((code) => { window.__nextScan = { status: 'ok', text: code, format: 'ean_13', engine: 'mlkit' }; },
+    h.g.barcodeNoToEan13(o.barcode_no));
+  await frame.click('button[data-tab="orders"]');
+  await frame.click('#lookupInput + .scan-btn');
+  await frame.waitForFunction((no) => document.getElementById('lookupMsg').innerText.includes('查詢成功：' + no), o.order_no);
+
+  // 數字欄位：非數字內容不帶入
+  await frame.click('button[data-tab="admin"]');
+  await frame.fill('#pinInput', '1234');
+  await frame.click('#pinOverlay .blue-btn');
+  await frame.waitForSelector('#tab-admin.active');
+  await frame.evaluate(() => { window.__nextScan = { status: 'ok', text: 'XYZ', format: 'code_128', engine: 'mlkit' }; });
+  await frame.click('#mPrice + .scan-btn');
+  await frame.waitForFunction(() => document.getElementById('toast').innerText.includes('不是數字'));
+  assert.equal(await frame.inputValue('#mPrice'), '0');
+  await frame.evaluate(() => { window.__nextScan = { status: 'ok', text: '4006381333931', format: 'ean_13', engine: 'mlkit' }; });
+  await frame.click('#mName + .scan-btn');
+  await frame.waitForFunction(() => document.getElementById('mName').value === '4006381333931');
+
+  // 取消掃描：欄位不變
+  await frame.evaluate(() => { window.__nextScan = { status: 'cancel' }; });
+  await frame.click('#mCategory + .scan-btn');
+  await page.waitForTimeout(200);
+  assert.equal(await frame.inputValue('#mCategory'), '');
+
+  const reqs = await frame.evaluate(() => window.__scanRequests);
+  assert.ok(reqs.length >= 7 && reqs.every((r) => r.t === 'barcode-scan' && r.v === 1 && r.confirm === true && /^[0-9a-f]{32}$/.test(r.id)));
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('條碼輸入：一般瀏覽器（沒有 App）改開 GitHub Pages 掃描頁新視窗', async () => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto(h.shellUrl);
+  await page.waitForFunction(() => window.MPOS_SHELL && window.MPOS_SHELL.gasReady);
+  const frame = page.frames().find((f) => f.url().startsWith(h.gasUrl));
+  await frame.waitForFunction(() => window.__MPOS_READY__ === true);
+  await frame.waitForFunction(() => Bridge.info && Bridge.info.shell_url);
+  const popupP = ctx.waitForEvent('page');
+  await frame.click('#orderNoteInput + .scan-btn');
+  const popup = await popupP;
+  assert.match(popup.url(), /\/barcode\/scan\.html\?id=[0-9a-f]{32}&origin=/);
+  await popup.close();
+  await ctx.close();
+});

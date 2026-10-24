@@ -36,6 +36,7 @@ Write-Ok "GitHub repo：$($cfg.repo)"
 
 # ------------------------------------------------------------
 Write-Step '1/6 本機自動化測試'
+Invoke-Native 'node' @((Join-Path $Root 'scripts\sync_barcode.js')) '同步條碼模組'
 if ($SkipTests) { Write-Warn2 '已略過本機測試（-SkipTests）' }
 else {
     Invoke-Native 'npm' @('run', 'test:unit') 'GAS 單元測試'

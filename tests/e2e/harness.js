@@ -75,7 +75,7 @@ function startHarness(opts) {
     if (url.pathname === '/gas') {
       const page = url.searchParams.get('page') === 'lookup' ? 'Lookup' : 'Index';
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(renderTemplate(page, { appVersion: g.APP_VERSION, initialQuery: url.searchParams.get('q') || '' }));
+      res.end(renderTemplate(page, { appVersion: g.APP_VERSION, initialQuery: url.searchParams.get('q') || '', pagesUrl: '' }));
       return;
     }
     res.writeHead(404); res.end('not found');

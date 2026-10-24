@@ -184,4 +184,13 @@ input,select,textarea{font-size:16px} /* 16px 以上避免手機自動放大 */
   .order-side{margin-top:var(--gap)}
   .order-foot{position:sticky;bottom:calc(-1 * clamp(10px,2vw,16px));background:var(--panel);margin-top:var(--gap);padding-bottom:4px;z-index:2}
 }
+
+/* ---- 條碼輸入按鈕（所有輸入欄位） ---- */
+.scan-wrap{display:flex;align-items:stretch;gap:6px;width:100%}
+.scan-wrap > input,.scan-wrap > textarea{flex:1;min-width:0}
+.scan-btn{flex:0 0 auto;width:clamp(38px,5vw,46px);border:2px solid var(--border);border-radius:10px;background:#fff4dc;color:var(--main2);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.scan-btn:active{background:var(--accent);color:#fff}
+.scan-wrap-ta .scan-btn{align-self:flex-start;height:clamp(38px,5vw,46px)}
+.pin-modal .scan-wrap{display:block}
+@media (max-width:600px){ .field-grid > div:has(> .scan-wrap > input:not([type=number])), .field-grid-4 > div:has(> .scan-wrap > input:not([type=number])){grid-column:1/-1} }
 </style>

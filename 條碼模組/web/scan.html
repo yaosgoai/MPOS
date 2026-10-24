@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>掃描條碼</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; font-family: "Microsoft JhengHei", "PingFang TC", sans-serif; }
+  #result { display: none; position: fixed; inset: 0; background: #fff; padding: 24px; box-sizing: border-box; overflow: auto; }
+  #result textarea { width: 100%; height: 40vh; font-size: 16px; box-sizing: border-box; }
+  #result button { margin-top: 12px; font-size: 16px; padding: 10px 18px; }
+  #msg { color: #fff; padding: 24px; }
+</style>
+</head>
+<body>
+<!--
+  條碼模組：掃描頁（放在可開相機的第一方網域，例如 GitHub Pages）
+  使用情境：呼叫端頁面不能開相機（例如 Google Apps Script 的 iframe），由 BarcodeScan.scanLive() 以新視窗開啟本頁。
+  網址參數：id（請求代碼）、origin（呼叫端來源，結果只送給此來源）、confirm（1／0）、formats（逗號分隔）
+  規格：《條碼模組規格書》第 7.2 節
+-->
+<div id="msg"></div>
+<div id="result"><h3>掃描內容</h3><textarea id="rt" readonly></textarea><br><button id="copy" type="button">📋 複製</button></div>
+<script src="barcode-scan.js"></script>
+<script>
+(function () {
+  'use strict';
+  /* 允許接收結果的呼叫端來源；空陣列＝任何 https 來源（結果只會送到 origin 參數指定的來源） */
+  var ALLOWED_ORIGINS = [];
+
+  var q = new URLSearchParams(location.search);
+  var id = (q.get('id') || '').replace(/[^a-f0-9]/gi, '').slice(0, 64);
+  var origin = q.get('origin') || '';
+  var okOrigin = /^https:\/\/[a-z0-9.\-]+(:\d+)?$/i.test(origin) && (!ALLOWED_ORIGINS.length || ALLOWED_ORIGINS.indexOf(origin) >= 0);
+  var opts = {
+    confirm: q.get('confirm') !== '0',
+    formats: (q.get('formats') || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean)
+  };
+
+  function reply(r) {
+    if (window.opener && okOrigin && id) {
+      try { window.opener.postMessage({ t: 'barcode-result', v: 1, id: id, status: r.status, text: r.text, format: r.format, engine: r.engine, error: r.error }, origin); } catch (e) {}
+      setTimeout(function () { window.close(); }, 150);
+      return;
+    }
+    if (r.status === 'ok') {   // 直接開啟本頁（沒有呼叫端）：顯示內容供複製
+      document.getElementById('rt').value = r.text;
+      document.getElementById('result').style.display = 'block';
+      document.getElementById('copy').onclick = function () { navigator.clipboard && navigator.clipboard.writeText(r.text); };
+    } else {
+      document.getElementById('msg').textContent = r.status === 'cancel' ? '已取消掃描' : '無法掃描（' + (r.error || '') + '）';
+      if (window.opener) setTimeout(function () { window.close(); }, 800);
+    }
+  }
+
+  if (window.opener && !okOrigin) {
+    document.getElementById('msg').textContent = '呼叫端來源不允許，無法回傳結果';
+    return;
+  }
+  BarcodeScan.runScanner(opts).then(reply);
+})();
+</script>
+</body>
+</html>

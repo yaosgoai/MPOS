@@ -1,0 +1,36 @@
+{
+  "說明": "條碼模組共用測試資料：Android（BarcodeRulesTest）與網頁（rules.test.js）都必須通過。新增實物條碼問題時，把照片放到 images/ 並在 images 區塊加一筆。",
+  "version": 1,
+  "rules": [
+    { "format": "itf", "text": "2666432011", "valid": true, "note": "實物 ITF（印 266643201，最後一碼為檢查碼）" },
+    { "format": "itf", "text": "432011", "valid": false, "note": "ITF 部分讀取（少於 8 碼）" },
+    { "format": "itf", "text": "266643201", "valid": false, "note": "ITF 必須偶數碼" },
+    { "format": "itf", "text": "15400141288763", "valid": true, "note": "ITF-14，檢查碼正確" },
+    { "format": "itf", "text": "15400141288764", "valid": false, "note": "ITF-14，檢查碼錯誤" },
+    { "format": "ean_13", "text": "4710088410000", "valid": false, "note": "EAN-13 檢查碼錯誤" },
+    { "format": "ean_13", "text": "4006381333931", "valid": true, "note": "EAN-13 檢查碼正確" },
+    { "format": "ean_8", "text": "96385074", "valid": true, "note": "EAN-8 檢查碼正確" },
+    { "format": "upc_a", "text": "036000291452", "valid": true, "note": "UPC-A 檢查碼正確" },
+    { "format": "upc_a", "text": "036000291453", "valid": false, "note": "UPC-A 檢查碼錯誤" },
+    { "format": "code_39", "text": "AB-12", "valid": true, "note": "Code 39 合法字元" },
+    { "format": "code_39", "text": "ab", "valid": false, "note": "Code 39 小寫且過短" },
+    { "format": "code_128", "text": "A", "valid": false, "note": "Code 128 至少 2 字" },
+    { "format": "codabar", "text": "A1234B", "valid": true, "note": "Codabar 去掉起訖字元後 ≥4" },
+    { "format": "qr_code", "text": "https://example.com/?a=1", "valid": true, "note": "QR 不另驗證" },
+    { "format": "qr_code", "text": "abc�", "valid": false, "note": "含解碼失敗替代字元" },
+    { "format": "code_128", "text": "AB\u0001C", "valid": false, "note": "含控制字元" }
+  ],
+  "requiredReads": { "qr_code": 2, "data_matrix": 2, "pdf417": 2, "ean_13": 3, "ean_8": 3, "upc_a": 3, "upc_e": 3, "code_128": 3, "itf": 3, "code_39": 4, "code_93": 4, "codabar": 4 },
+  "voter": [
+    { "note": "ITF 2.5 秒內 3 次（中間漏讀不影響）→ 第 3 次採用",
+      "windowMs": 2500, "reads": [ [0, "itf", "2666432011"], [400, "itf", "2666432011"], [900, "itf", "2666432011"] ], "acceptAt": 2 },
+    { "note": "超過時間視窗的讀值不累計",
+      "windowMs": 2500, "reads": [ [0, "itf", "2666432011"], [1000, "itf", "2666432011"], [3000, "itf", "2666432011"], [3400, "itf", "2666432011"] ], "acceptAt": 3 },
+    { "note": "視窗內已有較長讀值時，較短的部分讀值不採用",
+      "windowMs": 2500, "reads": [ [0, "itf", "2666432011"], [100, "itf", "66643201"], [200, "itf", "66643201"], [300, "itf", "66643201"], [400, "itf", "2666432011"], [500, "itf", "2666432011"] ], "acceptAt": 5 }
+  ],
+  "images": [
+    { "file": "images/itf_2666432011_a.jpg", "format": "itf", "text": "2666432011", "note": "軟管曲面、條碼左側空白窄、有反光；ZXing 整張只在 80% 縮放可讀；ZxingFallback 多縮放水平帶可讀；zxing-cpp 可讀" },
+    { "file": "images/itf_2666432011_b.jpg", "format": "itf", "text": "2666432011", "note": "同一物品另一角度；ZXing、ZxingFallback 可讀；zxing-cpp 整張讀不到" }
+  ]
+}

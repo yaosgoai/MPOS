@@ -1,0 +1,482 @@
+<!-- 自動產生：scripts/sync_barcode.js，來源 條碼模組/web/barcode-scan.js v1.0.0，請勿手動修改 -->
+<script>
+/*!
+ * barcode-scan.js — 條碼模組（網頁版）v1.0.0
+ * 規格：《條碼模組規格書》；驗證規則須與 Android 版 BarcodeRules.java 一致（test/vectors.json）。
+ *
+ * 用法：
+ *   <script src="barcode-scan.js"><\/script>
+ *   BarcodeScan.scanLive({ scanPageUrl: 'https://<你的網域>/scan.html' }).then(r => { if (r.status === 'ok') use(r.text); });
+ *   BarcodeScan.decodeFile(file).then(r => r && use(r.text));
+ *
+ * 對外：BarcodeScan.version / FORMATS / config / validate / requiredReads / createVoter /
+ *       decodeFile / scanLive / runScanner / cameraAllowed
+ */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.BarcodeScan = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  var VERSION = '1.0.0';
+
+  /* ======================= 格式與規則（第 3、5 章） ======================= */
+  var FORMATS = ['qr_code', 'data_matrix', 'pdf417', 'aztec', 'ean_13', 'ean_8', 'upc_a', 'upc_e',
+    'code_128', 'code_39', 'code_93', 'itf', 'codabar'];
+  var ONE_D = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'code_93', 'itf', 'codabar'];
+  var LABELS = { qr_code: 'QR Code', data_matrix: 'Data Matrix', pdf417: 'PDF417', aztec: 'Aztec', ean_13: 'EAN-13', ean_8: 'EAN-8',
+    upc_a: 'UPC-A', upc_e: 'UPC-E', code_128: 'Code 128', code_39: 'Code 39', code_93: 'Code 93', itf: 'ITF', codabar: 'Codabar' };
+  var ITF_MIN_LENGTH = 8;
+
+  /** 各引擎的格式名稱 → 本模組格式代碼 */
+  function normFormat(f) {
+    var k = String(f || '').toLowerCase().replace(/[-\s]/g, '_');
+    if (k === 'pdf_417') k = 'pdf417';
+    if (k === 'qrcode') k = 'qr_code';
+    if (k === 'datamatrix') k = 'data_matrix';
+    if (k === 'code128') k = 'code_128';
+    if (k === 'code39') k = 'code_39';
+    if (k === 'code93') k = 'code_93';
+    if (k === 'ean13') k = 'ean_13';
+    if (k === 'ean8') k = 'ean_8';
+    if (k === 'upca') k = 'upc_a';
+    if (k === 'upce') k = 'upc_e';
+    return FORMATS.indexOf(k) >= 0 ? k : 'unknown';
+  }
+
+  function eanOk(d) {
+    var s = 0, n = d.length;
+    if (n < 2) return false;
+    for (var i = 0; i < n - 1; i++) { var x = +d.charAt(n - 2 - i); s += i % 2 === 0 ? x * 3 : x; }
+    return (10 - s % 10) % 10 === +d.charAt(n - 1);
+  }
+
+  /** 讀值是否合理（與 BarcodeRules.isValid 相同） */
+  function validate(format, v) {
+    if (v == null || !String(v).trim()) return false;
+    v = String(v);
+    if (/�/.test(v) || /[\x00-\x08\x0B\x0C\x0E-\x1C\x1E\x1F]/.test(v)) return false;   // 亂碼／控制字元（GS1 分隔符 0x1D 除外）
+    switch (normFormat(format)) {
+      case 'ean_13': return /^\d{13}$/.test(v) && eanOk(v);
+      case 'ean_8': return /^\d{8}$/.test(v) && eanOk(v);
+      case 'upc_a': return /^\d{12}$/.test(v) && eanOk(v);
+      case 'upc_e': return /^\d{6,8}$/.test(v);
+      case 'itf': return new RegExp('^\\d{' + ITF_MIN_LENGTH + ',}$').test(v) && v.length % 2 === 0 && (v.length !== 14 || eanOk(v));
+      case 'codabar': return v.replace(/[ABCD]/gi, '').length >= 4;
+      case 'code_39': return v.length >= 3 && /^[0-9A-Z \-.$\/+%*]+$/.test(v);
+      case 'code_93': return v.length >= 3;
+      case 'code_128': return v.length >= 2;
+      default: return true;
+    }
+  }
+
+  /** 同一內容需讀到幾次才採用（與 BarcodeRules.requiredReads 相同） */
+  function requiredReads(format) {
+    var f = normFormat(format);
+    if (f === 'code_39' || f === 'code_93' || f === 'codabar') return 4;
+    return ONE_D.indexOf(f) >= 0 ? 3 : 2;
+  }
+
+  /** 投票器（與 ReadVoter 相同）：add(format, text, nowMs?) 達到條件回傳 true */
+  function createVoter(windowMs) {
+    var W = windowMs > 0 ? windowMs : 2500, votes = {};
+    return {
+      add: function (format, text, now) {
+        now = now == null ? Date.now() : now;
+        Object.keys(votes).forEach(function (k) {
+          votes[k] = votes[k].filter(function (t) { return now - t < W; });
+          if (!votes[k].length) delete votes[k];
+        });
+        (votes[text] = votes[text] || []).push(now);
+        for (var k in votes) if (k !== text && k.length > text.length && k.indexOf(text) >= 0) return false;   // 部分讀取
+        if (votes[text].length < requiredReads(format)) return false;
+        votes = {};
+        return true;
+      },
+      reset: function () { votes = {}; }
+    };
+  }
+
+  /* ======================= 設定與外部元件（第 8 章） ======================= */
+  var config = {
+    zxingUrl: 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js',
+    zxingIntegrity: '',          // 建議填入 SRI 雜湊（sha384-…）
+    zxingWasmUrl: 'https://cdn.jsdelivr.net/npm/zxing-wasm@2.2.4/dist/iife/reader/index.js',
+    zxingWasmIntegrity: '',
+    jsQrUrl: 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js',
+    jsQrIntegrity: '',
+    voteWindowMs: 2500
+  };
+
+  var loaded = {};
+  function loadScript(url, integrity, globalName) {
+    if (typeof window === 'undefined') return Promise.reject(new Error('no_browser'));
+    if (window[globalName]) return Promise.resolve(window[globalName]);
+    if (loaded[url]) return loaded[url];
+    loaded[url] = new Promise(function (res, rej) {
+      var s = document.createElement('script');
+      s.src = url;
+      if (integrity) { s.integrity = integrity; s.crossOrigin = 'anonymous'; }
+      s.onload = function () { window[globalName] ? res(window[globalName]) : rej(new Error('load_failed')); };
+      s.onerror = function () { rej(new Error('load_failed')); };
+      document.head.appendChild(s);
+    });
+    loaded[url].catch(function () { delete loaded[url]; });
+    return loaded[url];
+  }
+
+  function allowed(opts, fmt) {
+    var list = opts && opts.formats && opts.formats.length ? opts.formats.map(normFormat) : null;
+    return fmt !== 'unknown' && (!list || list.indexOf(fmt) >= 0);
+  }
+
+  /* ======================= ZXing（JS）輔助 ======================= */
+  var zxReaders = null;
+  function zxingReaders(Z) {
+    if (zxReaders) return zxReaders;
+    var F = Z.BarcodeFormat;
+    function mk(formats) {
+      var h = new Map();
+      h.set(Z.DecodeHintType.POSSIBLE_FORMATS, formats);
+      h.set(Z.DecodeHintType.TRY_HARDER, true);
+      h.set(Z.DecodeHintType.ALLOWED_LENGTHS, Int32Array.from([6, 8, 10, 12, 14, 16, 18, 20, 22, 24]));
+      var r = new Z.MultiFormatReader(); r.setHints(h); return r;
+    }
+    zxReaders = {
+      oneD: mk([F.ITF, F.CODE_128, F.CODE_39, F.CODE_93, F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODABAR]),
+      twoD: mk([F.QR_CODE, F.DATA_MATRIX, F.PDF_417, F.AZTEC])
+    };
+    return zxReaders;
+  }
+  function grayOf(ctx, w, h) {
+    var d = ctx.getImageData(0, 0, w, h).data, g = new Uint8ClampedArray(w * h);
+    for (var i = 0, j = 0; i < d.length; i += 4, j++) g[j] = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
+    return g;
+  }
+  function zxTry(Z, reader, g, w, h) {
+    try {
+      var r = reader.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.RGBLuminanceSource(g, w, h))));
+      if (!r || !r.getText()) return null;
+      return { format: normFormat(Z.BarcodeFormat[r.getBarcodeFormat()]), text: r.getText() };
+    } catch (e) { return null; } finally { try { reader.reset(); } catch (e) {} }
+  }
+
+  /* ======================= 照片辨識（第 4.3 節） ======================= */
+  function loadImage(file) {
+    return new Promise(function (res, rej) {
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function () { URL.revokeObjectURL(url); res(img); };
+      img.onerror = function () { URL.revokeObjectURL(url); rej(new Error('bad_image')); };
+      img.src = url;
+    });
+  }
+
+  /** 照片辨識：BarcodeDetector → jsQR → ZXing（多縮放、水平帶、0°／90°）→ zxing-wasm；回傳 {status:'ok',text,format,engine} 或 null */
+  function decodeFile(file, opts) {
+    opts = opts || {};
+    var ok = function (format, text, engine) {
+      format = normFormat(format);
+      return allowed(opts, format) && validate(format, text) ? { status: 'ok', text: String(text), format: format, engine: engine } : null;
+    };
+    return loadImage(file).then(function (img) {
+      var chain = Promise.resolve(null);
+      // ① 瀏覽器內建 BarcodeDetector（Android Chrome 等）
+      chain = chain.then(function (r) {
+        if (r || !('BarcodeDetector' in window)) return r;
+        return Promise.resolve(window.BarcodeDetector.getSupportedFormats ? window.BarcodeDetector.getSupportedFormats() : [])
+          .then(function (fm) {
+            var det = fm && fm.length ? new window.BarcodeDetector({ formats: fm }) : new window.BarcodeDetector();
+            return det.detect(img);
+          })
+          .then(function (list) {
+            for (var i = 0; list && i < list.length; i++) { var x = ok(list[i].format, list[i].rawValue, 'native'); if (x) return x; }
+            return null;
+          }).catch(function () { return null; });
+      });
+      // ② jsQR（只認 QR）
+      chain = chain.then(function (r) {
+        if (r || !allowed(opts, 'qr_code')) return r;
+        return loadScript(config.jsQrUrl, config.jsQrIntegrity, 'jsQR').then(function (jsQR) {
+          var sizes = [1600, 1000, 2400, 700];
+          for (var i = 0; i < sizes.length; i++) {
+            var k = Math.min(1, sizes[i] / Math.max(img.naturalWidth, img.naturalHeight));
+            var w = Math.max(1, Math.round(img.naturalWidth * k)), h = Math.max(1, Math.round(img.naturalHeight * k));
+            var c = document.createElement('canvas'); c.width = w; c.height = h;
+            var ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
+            var code = jsQR(ctx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: 'attemptBoth' });
+            if (code && code.data) { var x = ok('qr_code', code.data, 'jsqr'); if (x) return x; }
+          }
+          return null;
+        }).catch(function () { return null; });
+      });
+      // ③ ZXing（JS）：整張＋水平帶，多種縮放、0°／90°（ZXing 對一維條碼的線寬很敏感）
+      chain = chain.then(function (r) {
+        if (r) return r;
+        return loadScript(config.zxingUrl, config.zxingIntegrity, 'ZXing').then(function (Z) {
+          var R = zxingReaders(Z), rots = [0, 90], sizes = [1200, 1600, 900, 700];
+          for (var a = 0; a < rots.length; a++) {
+            for (var b = 0; b < sizes.length; b++) {
+              var k = Math.min(2, sizes[b] / Math.max(img.naturalWidth, img.naturalHeight));
+              var iw = Math.round(img.naturalWidth * k), ih = Math.round(img.naturalHeight * k);
+              var c = document.createElement('canvas'), ctx = c.getContext('2d', { willReadFrequently: true });
+              c.width = rots[a] ? ih : iw; c.height = rots[a] ? iw : ih;
+              if (rots[a]) { ctx.translate(c.width, 0); ctx.rotate(Math.PI / 2); }
+              ctx.drawImage(img, 0, 0, iw, ih);
+              var g = grayOf(ctx, c.width, c.height);
+              var t = zxTry(Z, R.oneD, g, c.width, c.height) || zxTry(Z, R.twoD, g, c.width, c.height);
+              if (t) { var x = ok(t.format, t.text, 'zxing'); if (x) return x; }
+              var bh = Math.max(40, Math.round(c.height * 0.15));   // 條碼旁常有文字干擾：逐段水平帶
+              for (var y = 0; y + bh <= c.height; y += Math.round(bh / 2)) {
+                var band = document.createElement('canvas'); band.width = c.width; band.height = bh;
+                var bctx = band.getContext('2d', { willReadFrequently: true });
+                bctx.drawImage(c, 0, y, c.width, bh, 0, 0, c.width, bh);
+                t = zxTry(Z, R.oneD, grayOf(bctx, c.width, bh), c.width, bh);
+                if (t) { var x2 = ok(t.format, t.text, 'zxing'); if (x2) return x2; }
+              }
+            }
+          }
+          return null;
+        }).catch(function () { return null; });
+      });
+      // ④ zxing-cpp（WebAssembly）：對反光、條碼前後空白不足較強
+      chain = chain.then(function (r) {
+        if (r) return r;
+        return loadScript(config.zxingWasmUrl, config.zxingWasmIntegrity, 'ZXingWASM').then(function (W) {
+          return W.readBarcodes(file, { tryHarder: true, maxNumberOfSymbols: 4 });
+        }).then(function (list) {
+          for (var i = 0; list && i < list.length; i++) {
+            if (!list[i].isValid) continue;
+            var x = ok(list[i].format, list[i].text, 'zxing-wasm'); if (x) return x;
+          }
+          return null;
+        }).catch(function () { return null; });
+      });
+      return chain;
+    });
+  }
+
+  /* ======================= 即時掃描畫面（第 4.1、7 章） ======================= */
+  var CSS = '.bcs-root{position:fixed;inset:0;z-index:2147483000;background:#000;font-family:"Microsoft JhengHei","PingFang TC",sans-serif}' +
+    '.bcs-root video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}' +
+    '.bcs-frame{position:absolute;left:50%;top:50%;width:min(70vw,70vh);height:min(70vw,70vh);transform:translate(-50%,-50%);border:1.5px solid rgba(255,255,255,.8);border-radius:6px;box-shadow:0 0 0 100vmax rgba(0,0,0,.55)}' +
+    '.bcs-cross{position:absolute;left:50%;top:50%;width:16%;height:16%;transform:translate(-50%,-50%)}' +
+    '.bcs-cross:before,.bcs-cross:after{content:"";position:absolute;background:#ff3b30;border-radius:2px}' +
+    '.bcs-cross:before{left:0;right:0;top:50%;height:3px;transform:translateY(-50%)}.bcs-cross:after{top:0;bottom:0;left:50%;width:3px;transform:translateX(-50%)}' +
+    '.bcs-close{position:absolute;top:max(14px,env(safe-area-inset-top));left:14px;z-index:2;background:rgba(0,0,0,.5);color:#fff;border:0;border-radius:20px;padding:10px 16px;font:inherit;font-size:16px}' +
+    '.bcs-hint{position:absolute;left:0;right:0;bottom:calc(80px + env(safe-area-inset-bottom));text-align:center;color:#fff;font-size:16px;text-shadow:0 0 4px #000;padding:0 20px;line-height:1.6}' +
+    '.bcs-confirm{display:none;position:absolute;inset:0;z-index:5;background:rgba(0,0,0,.94);color:#fff;flex-direction:column;padding:calc(20px + env(safe-area-inset-top)) 16px calc(20px + env(safe-area-inset-bottom));box-sizing:border-box;text-align:center}' +
+    '.bcs-confirm canvas{flex:1;min-height:0;width:100%;object-fit:contain;margin:12px 0}.bcs-fmt{color:#9ca3af;font-size:14px}' +
+    '.bcs-text{font-size:22px;margin:6px 0 16px;word-break:break-all;user-select:text}.bcs-btns{display:flex;gap:12px}' +
+    '.bcs-btns button{flex:1;height:54px;font-size:17px;border-radius:12px;border:0}.bcs-use{background:#1a73e8;color:#fff}';
+
+  /** 此頁面是否被允許使用相機（iframe 未授權 camera 時為 false） */
+  function cameraAllowed() {
+    if (typeof navigator === 'undefined' || !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) return false;
+    try {
+      var pp = document.permissionsPolicy || document.featurePolicy;
+      if (pp && typeof pp.allowsFeature === 'function') return pp.allowsFeature('camera');
+    } catch (e) {}
+    return true;
+  }
+
+  function beep() {
+    try { navigator.vibrate && navigator.vibrate(80); } catch (e) {}
+    try { var a = new (window.AudioContext || window.webkitAudioContext)(), o = a.createOscillator(); o.frequency.value = 1800; o.connect(a.destination); o.start(); o.stop(a.currentTime + 0.12); } catch (e) {}
+  }
+
+  /**
+   * 在本頁開相機即時掃描（全螢幕覆蓋層）。opts = { formats, confirm(預設 true), hint, voteWindowMs }
+   * 回傳 Promise<{ status:'ok'|'cancel'|'error', text, format, engine, error }>
+   */
+  function runScanner(opts) {
+    opts = opts || {};
+    return new Promise(function (resolve) {
+      if (!document.getElementById('bcs-style')) {
+        var st = document.createElement('style'); st.id = 'bcs-style'; st.textContent = CSS; document.head.appendChild(st);
+      }
+      var rootEl = document.createElement('div');
+      rootEl.className = 'bcs-root';
+      rootEl.innerHTML = '<video playsinline muted autoplay></video><div class="bcs-frame"><b class="bcs-cross"></b></div>' +
+        '<button type="button" class="bcs-close">✕ 取消</button><div class="bcs-hint"></div>' +
+        '<div class="bcs-confirm"><div>請對照畫面確認內容是否正確</div><canvas></canvas><div class="bcs-fmt"></div><div class="bcs-text"></div>' +
+        '<div class="bcs-btns"><button type="button" class="bcs-again">↻ 重新掃描</button><button type="button" class="bcs-use">✔ 正確，使用</button></div></div>';
+      document.body.appendChild(rootEl);
+      var v = rootEl.querySelector('video'), hint = rootEl.querySelector('.bcs-hint');
+      hint.textContent = opts.hint || '把十字對準要讀的條碼，條碼盡量填滿方框寬度（一維條碼請橫放），辨識到會自動完成';
+      var stream = null, timer = null, busy = false, done = false, pending = null;
+      var voter = createVoter(opts.voteWindowMs || config.voteWindowMs);
+      var confirmBox = rootEl.querySelector('.bcs-confirm');
+
+      function stop() { clearInterval(timer); timer = null; if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+      function finish(r) { if (finish.called) return; finish.called = true; stop(); rootEl.remove(); resolve(r); }
+      rootEl.querySelector('.bcs-close').onclick = function () { finish({ status: 'cancel' }); };
+      rootEl.querySelector('.bcs-again').onclick = function () { confirmBox.style.display = 'none'; voter.reset(); pending = null; done = false; };
+      rootEl.querySelector('.bcs-use').onclick = function () { if (pending) finish(pending); };
+
+      function candidate(fmt, text, engine) {
+        fmt = normFormat(fmt);
+        if (done || !allowed(opts, fmt) || !validate(fmt, text)) return;   // 不合格直接忽略（不歸零）
+        if (!voter.add(fmt, text)) return;
+        done = true;
+        var r = { status: 'ok', text: String(text), format: fmt, engine: engine };
+        beep();
+        if (opts.confirm === false) { finish(r); return; }
+        pending = r;
+        var sh = confirmBox.querySelector('canvas'), vw = v.videoWidth, vh = v.videoHeight, s = Math.min(vw, vh) * 0.8;
+        sh.width = Math.round(s); sh.height = Math.round(s);
+        try { sh.getContext('2d').drawImage(v, (vw - s) / 2, (vh - s) / 2, s, s, 0, 0, sh.width, sh.height); } catch (e) {}
+        confirmBox.querySelector('.bcs-fmt').textContent = (LABELS[fmt] || '條碼') + '（已比對 ' + requiredReads(fmt) + ' 次一致）';
+        confirmBox.querySelector('.bcs-text').textContent = r.text;
+        confirmBox.style.display = 'flex';
+      }
+
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false })
+        .then(function (s) {
+          stream = s; v.srcObject = s;
+          return v.play().catch(function () {});
+        })
+        .then(function () {
+          if (!stream) return;
+          var detP = Promise.resolve(null);
+          if ('BarcodeDetector' in window) {
+            detP = window.BarcodeDetector.getSupportedFormats().then(function (sup) {
+              var fm = FORMATS.filter(function (f) { return sup.indexOf(f) >= 0; });
+              return fm.length && fm.indexOf('qr_code') >= 0 && fm.indexOf('code_128') >= 0 ? new window.BarcodeDetector({ formats: fm }) : null;
+            }).catch(function () { return null; });
+          }
+          return detP.then(function (det) {
+            // 即使有內建辨識，也載入 ZXing 當作一維條碼備援（內建讀不到的 ITF 等）
+            return loadScript(config.zxingUrl, config.zxingIntegrity, 'ZXing').then(function (Z) { return { det: det, Z: Z }; },
+              function () { return { det: det, Z: null }; });
+          });
+        })
+        .then(function (eng) {
+          if (!eng) return;
+          if (!eng.det && !eng.Z) { finish({ status: 'error', error: 'engine_unavailable' }); return; }
+          var R = eng.Z ? zxingReaders(eng.Z) : null;
+          var c = document.createElement('canvas'), ctx = c.getContext('2d', { willReadFrequently: true });
+          var tick = 0;
+          timer = setInterval(function () {
+            if (busy || done || v.readyState < 2) return;
+            busy = true; tick++;
+            var vw = v.videoWidth, vh = v.videoHeight, cx = vw / 2, cy = vh / 2;
+            var p = Promise.resolve(false);
+            if (eng.det) {
+              p = eng.det.detect(v).then(function (list) {
+                var best = null, bd = Infinity, tol = Math.min(vw, vh) * 0.03;   // 只取外框包含十字者，取最接近十字
+                (list || []).forEach(function (b) {
+                  var bb = b.boundingBox; if (!b.rawValue || !bb) return;
+                  if (cx < bb.x - tol || cx > bb.x + bb.width + tol || cy < bb.y - tol || cy > bb.y + bb.height + tol) return;
+                  var dx = bb.x + bb.width / 2 - cx, dy = bb.y + bb.height / 2 - cy, dist = dx * dx + dy * dy;
+                  if (dist < bd) { bd = dist; best = b; }
+                });
+                if (best && validate(normFormat(best.format), best.rawValue)) { candidate(best.format, best.rawValue, 'native'); return true; }
+                return false;
+              }).catch(function () { return false; });
+            }
+            p.then(function (hit) {
+              // 內建沒讀到（或沒有內建）：ZXing 讀「穿過十字的水平帶」；有內建時每 2 張畫面才跑一次，避免耗電
+              if (hit || !R || (eng.det && tick % 2)) return;
+              var sh = Math.min(vw, vh) * 0.12, fr = [0.92, 0.78, 0.64, 0.5], scales = [1, 0.7];
+              for (var k = 0; k < fr.length; k++) {
+                for (var q = 0; q < scales.length; q++) {
+                  var sw = vw * fr[k], sc = Math.min(2, Math.max(0.4, 1400 / sw)) * scales[q];
+                  var bw = Math.round(sw * sc), bh = Math.max(40, Math.round(sh * sc));
+                  c.width = bw; c.height = bh;
+                  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+                  ctx.drawImage(v, (vw - sw) / 2, cy - sh / 2, sw, sh, 0, 0, bw, bh);
+                  var t = zxTry(eng.Z, R.oneD, grayOf(ctx, bw, bh), bw, bh);
+                  if (t) { candidate(t.format, t.text, 'zxing'); return; }
+                }
+              }
+              if (!eng.det) {   // 沒有內建辨識：二維碼也用 ZXing 讀取景框正方形
+                var s = Math.min(vw, vh) * 0.8, out = Math.min(800, Math.round(s));
+                c.width = out; c.height = out;
+                ctx.drawImage(v, cx - s / 2, cy - s / 2, s, s, 0, 0, out, out);
+                var t2 = zxTry(eng.Z, R.twoD, grayOf(ctx, out, out), out, out);
+                if (t2) candidate(t2.format, t2.text, 'zxing');
+              }
+            }).then(function () { busy = false; }, function () { busy = false; });
+          }, 150);
+        })
+        .catch(function (e) {
+          finish({ status: 'error', error: e && e.name === 'NotAllowedError' ? 'camera_permission' : 'camera_unavailable' });
+        });
+    });
+  }
+
+  /* ======================= 對外入口：scanLive（第 6、7 章） ======================= */
+  function newId() {
+    var a = new Uint8Array(16);
+    (window.crypto || window.msCrypto).getRandomValues(a);
+    return Array.prototype.map.call(a, function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+  }
+
+  /**
+   * 即時掃描。自動選擇：① App 原生（window.BarcodeBridge）② 本頁相機 ③ 掃描頁新視窗（opts.scanPageUrl）
+   * opts = { formats, confirm, hint, voteWindowMs, mode: 'auto'|'native'|'inline'|'popup', scanPageUrl, popupFeatures }
+   */
+  function scanLive(opts) {
+    opts = opts || {};
+    var mode = opts.mode || 'auto';
+    var id = newId();
+    var bridge = typeof window !== 'undefined' ? window.BarcodeBridge : null;
+
+    if ((mode === 'auto' || mode === 'native') && bridge && typeof bridge.postMessage === 'function') {
+      return new Promise(function (resolve) {
+        var prev = bridge.onmessage;
+        bridge.onmessage = function (ev) {
+          var d = null;
+          try { d = JSON.parse(ev.data); } catch (e) { return; }
+          if (!d || d.t !== 'barcode-result' || d.id !== id) return;
+          bridge.onmessage = prev || null;
+          if (d.status === 'ok' && !validate(d.format, d.text)) d = { status: 'error', error: 'invalid_result' };
+          resolve({ status: d.status, text: d.text, format: d.format, engine: d.engine, error: d.error });
+        };
+        bridge.postMessage(JSON.stringify({ t: 'barcode-scan', v: 1, id: id, formats: opts.formats || [], confirm: opts.confirm !== false, hint: opts.hint }));
+      });
+    }
+    if (mode === 'native') return Promise.resolve({ status: 'error', error: 'native_unavailable' });
+
+    if ((mode === 'auto' || mode === 'inline') && cameraAllowed() && (mode === 'inline' || window.top === window)) return runScanner(opts);
+    if (mode === 'inline') return Promise.resolve({ status: 'error', error: 'camera_unavailable' });
+
+    if (!opts.scanPageUrl) return Promise.resolve({ status: 'error', error: 'no_scan_page' });
+    return new Promise(function (resolve) {
+      var pageOrigin = new URL(opts.scanPageUrl, location.href).origin;
+      var q = new URLSearchParams({ id: id, origin: location.origin, confirm: opts.confirm === false ? '0' : '1' });
+      if (opts.formats && opts.formats.length) q.set('formats', opts.formats.join(','));
+      var w = window.open(opts.scanPageUrl + (opts.scanPageUrl.indexOf('?') >= 0 ? '&' : '?') + q.toString(), 'barcode_scan', opts.popupFeatures || 'width=480,height=720');
+      if (!w) { resolve({ status: 'error', error: 'popup_blocked' }); return; }
+      var closedTimer = null;
+      function onMsg(e) {
+        if (e.origin !== pageOrigin || e.source !== w) return;   // 只接受自己開的掃描頁
+        var d = e.data;
+        if (!d || d.t !== 'barcode-result' || d.id !== id) return;
+        cleanup();
+        if (d.status === 'ok' && !validate(d.format, d.text)) d = { status: 'error', error: 'invalid_result' };
+        resolve({ status: d.status, text: d.text, format: d.format, engine: d.engine, error: d.error });
+      }
+      function cleanup() { window.removeEventListener('message', onMsg); clearInterval(closedTimer); }
+      window.addEventListener('message', onMsg);
+      closedTimer = setInterval(function () { if (w.closed) { cleanup(); resolve({ status: 'cancel' }); } }, 800);
+    });
+  }
+
+  return {
+    version: VERSION,
+    FORMATS: FORMATS.slice(),
+    LABELS: LABELS,
+    config: config,
+    normFormat: normFormat,
+    validate: validate,
+    requiredReads: requiredReads,
+    createVoter: createVoter,
+    decodeFile: decodeFile,
+    runScanner: runScanner,
+    scanLive: scanLive,
+    cameraAllowed: cameraAllowed
+  };
+});
+
+</script>

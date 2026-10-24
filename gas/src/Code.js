@@ -14,6 +14,7 @@ function doGet(e) {
   var tpl = HtmlService.createTemplateFromFile(page);
   tpl.initialQuery = String(p.q || '');
   tpl.appVersion = APP_VERSION;
+  tpl.pagesUrl = (typeof PAGES_URL !== 'undefined' && PAGES_URL) ? PAGES_URL : '';
   return tpl.evaluate()
     .setTitle('茉莉花鯛魚燒 POS')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no')

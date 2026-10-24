@@ -14,3 +14,7 @@ dependencyResolutionManagement {
 }
 rootProject.name = "MPOS"
 include ':app'
+
+// 條碼模組（共用 Android Library）：C:\Python_Good_POS\MPOS\MPOS_Cloud\條碼模組
+include ':barcode-scanner'
+project(':barcode-scanner').projectDir = new File(settingsDir, '../條碼模組/android/barcode-scanner')

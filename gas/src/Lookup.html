@@ -10,27 +10,37 @@ body{margin:0;background:#f7efe3;font-family:"Microsoft JhengHei","Noto Sans TC"
 .card{background:#fffaf0;border:2px solid #d8b98a;border-radius:16px;padding:16px;margin-bottom:14px}
 .title{font-size:26px;font-weight:900;color:#5e2808;margin-bottom:8px}
 .hint{font-size:14px;color:#735c3f;line-height:1.6}
-.row{display:grid;grid-template-columns:1fr 140px;gap:10px;margin-top:12px}
+.row,.row3{display:grid;grid-template-columns:1fr 140px;gap:10px;margin-top:12px}.row3{grid-template-columns:1fr 100px 120px}
 input{width:100%;border-radius:10px;border:2px solid #d8b98a;padding:12px;font-size:18px;box-sizing:border-box}
 button{border:0;border-radius:10px;padding:12px 16px;background:#8a3f12;color:#fff;font-size:18px;font-weight:900;cursor:pointer}
 .msg{margin-top:12px;padding:10px;border-radius:10px;display:none;white-space:pre-wrap}
 .msg.ok{display:block;background:#e7f6ec;color:#155f2c}.msg.err{display:block;background:#fdebea;color:#8a1c16}
 table{width:100%;border-collapse:collapse;background:#fff}th,td{border:1px solid #e6d0aa;padding:8px;text-align:left;vertical-align:top}th{background:#fff0c8;color:#5e2808}
-@media(max-width:680px){.row{grid-template-columns:1fr}}
+@media(max-width:680px){.row{grid-template-columns:1fr}.row3{grid-template-columns:1fr 1fr}.row3 input{grid-column:span 2}}
 </style>
+<?!= include('BarcodeScanLib') ?>
 </head>
 <body>
 <div class="wrap">
   <div class="card">
     <div class="title">流水號查詢</div>
     <div class="hint">掃描小票上的 EAN13 條碼，或輸入 7 碼邏輯號（例如 0704002）/ 完整單號（例如 202607040002）</div>
-    <div class="row"><input id="q" placeholder="請輸入流水號" onkeydown="if(event.key==='Enter')query()"><button onclick="query()">查詢</button></div>
+    <div class="row3"><input id="q" placeholder="請輸入流水號" onkeydown="if(event.key==='Enter')query()"><button onclick="scanQ()" title="掃描條碼">掃描</button><button onclick="query()">查詢</button></div>
     <div id="msg" class="msg"></div>
   </div>
   <div id="result"></div>
 </div>
 <script>
 var INITIAL_QUERY = <?!= JSON.stringify(initialQuery) ?>;
+var PAGES_URL = <?!= JSON.stringify(pagesUrl) ?>;
+function scanQ(){
+  if(typeof BarcodeScan==='undefined'){show('err','條碼模組未載入');return;}
+  var page=''; try{ if(PAGES_URL) page=new URL('barcode/scan.html', PAGES_URL.replace(/[^/]*$/,'')).href; }catch(e){}
+  BarcodeScan.scanLive({confirm:true, scanPageUrl:page}).then(function(r){
+    if(r.status==='ok'){ document.getElementById('q').value=r.text; query(); }
+    else if(r.status!=='cancel'){ show('err','掃描失敗：'+r.error); }
+  });
+}
 function esc(s){return String(s==null?'':s).replace(/[&<>'"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c];});}
 function money(n){return (parseInt(n||0,10)||0)+' 元';}
 function label(s){return ({pending:'待完成',completed:'已完成',cancelled:'已取消'})[s]||s;}

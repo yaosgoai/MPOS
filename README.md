@@ -52,6 +52,16 @@ commit 訊息含 `[skip emulator]` 可略過模擬器測試。
 - USB 安裝不行時可改為推送到平板「Download」資料夾手動點安裝
 - 參數：`-Latest` 先下載 GitHub 最新版、`-Force` 相同版本也重裝、`-Apk 路徑` 指定檔案
 
+## 條碼輸入（條碼模組）
+
+GAS 畫面上**所有輸入欄位**旁都有條碼按鈕（密碼、日期、單據版型表格除外），按下即呼叫 `條碼模組` 掃描，結果帶回該欄位：
+- **Android App**：條碼模組原生掃描畫面（ML Kit + ZXing），經 `WebViewScanBridge` 回傳
+- **電腦 / 手機瀏覽器**：GAS iframe 不能開相機，改開 GitHub Pages 的 `barcode/scan.html` 新視窗
+- 文字欄位直接帶入；多行備註換行附加；數字欄位只接受數字；「今日訂單」掃小票條碼會自動查詢
+- 實體條碼槍（鍵盤模式）照常可直接刷入
+
+`條碼模組/` 是唯一來源；`scripts/sync_barcode.js` 會在測試與部署前自動同步到 `gas/src/BarcodeScanLib.html`、`docs/barcode/`，請勿手動修改這些產生檔。
+
 ## 自動化測試
 
 | 測試 | 位置 | 執行 |

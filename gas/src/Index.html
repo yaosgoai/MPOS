@@ -5,6 +5,7 @@
 <meta charset="UTF-8">
 <title>茉莉花鯛魚燒 POS</title>
 <?!= include('Styles') ?>
+<?!= include('BarcodeScanLib') ?>
 </head>
 <body>
 <div id="loadingMask" class="loading-mask">POS 資料載入中...</div>
@@ -96,7 +97,7 @@
         <div><label>&nbsp;</label><button class="main-btn blue-btn" onclick="loadOrders()">重新整理</button></div>
       </div>
       <div class="field-grid" style="margin-bottom:12px;">
-        <div><label>掃描 / 輸入單號查詢</label><input id="lookupInput" placeholder="掃描小票條碼或輸入 0704001" onkeydown="if(event.key==='Enter')lookupOrder()"></div>
+        <div><label>掃描 / 輸入單號查詢</label><input id="lookupInput" data-scan-submit="lookupOrder" placeholder="掃描小票條碼或輸入 0704001" onkeydown="if(event.key==='Enter')lookupOrder()"></div>
         <div><label>&nbsp;</label><button class="main-btn gray-btn" onclick="lookupOrder()">查詢單號</button></div>
       </div>
       <div id="lookupMsg" class="message"></div>
@@ -216,7 +217,7 @@
         <button class="main-btn blue-btn" onclick="saveLayout()">儲存版型</button>
         <button class="main-btn gray-btn" onclick="resetLayoutDefault()">恢復預設</button>
       </div>
-      <div id="layoutEditorArea" style="margin-top:12px;"></div>
+      <div id="layoutEditorArea" data-noscan style="margin-top:12px;"></div>
       <h2 class="section-title" style="margin-top:14px;">版型預覽</h2>
       <div id="layoutPreviewArea" class="layout-preview-box"></div>
     </section>
@@ -291,6 +292,7 @@
  * - 列印：postMessage → GitHub Pages 外殼 → Android App 藍牙 ESC/POS
  * ====================================================================== */
 var GAS_VERSION = <?!= JSON.stringify(appVersion) ?>;
+var PAGES_URL = <?!= JSON.stringify(pagesUrl) ?>;
 var appData = {menu:[], all_menu:[], notes:[], all_notes:[], settings:{}, layout:[], default_layout:[], today:''};
 var cart = [];          // 訂購項目：[{key,id,name,price,qty,notes:[],custom:''}]
 var picker = null;      // 新增 / 修改中的項目
@@ -412,6 +414,71 @@ function browserPrint(job){
   return {printer:'瀏覽器列印'};
 }
 
+/* ---------- 條碼輸入：每個輸入欄位旁的掃描按鈕（呼叫「條碼模組」） ----------
+ * App 內：條碼模組的原生掃描（WebViewScanBridge → window.BarcodeBridge）
+ * 電腦 / 手機瀏覽器：GAS iframe 不能開相機 → 以新視窗開 GitHub Pages 的 barcode/scan.html
+ * 實體條碼槍（鍵盤模式）不受影響，直接在欄位刷即可
+ */
+var SCAN_SKIP_TYPES=['password','hidden','checkbox','radio','date','time','datetime-local','month','week','color','file','range','button','submit','reset'];
+var SCAN_ICON='<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M3 5h2v14H3zm3 0h1v14H6zm2 0h2v14H8zm3 0h1v14h-1zm3 0h2v14h-2zm3 0h1v14h-1zm2 0h2v14h-2z"/></svg>';
+function scanPageUrl(){
+  var base=(Bridge.info && Bridge.info.shell_url) || PAGES_URL || '';
+  if(!base) return '';
+  try{ return new URL('barcode/scan.html', base.replace(/[^/]*$/,'')).href; }catch(e){ return ''; }
+}
+function scannable(el){
+  if(el.closest('[data-noscan]') || el.dataset.noscan!==undefined || el.readOnly || el.disabled) return false;
+  if(el.tagName==='TEXTAREA') return true;
+  return SCAN_SKIP_TYPES.indexOf(String(el.type||'text').toLowerCase())<0;
+}
+function attachScanButtons(root){
+  (root||document).querySelectorAll('input,textarea').forEach(function(el){
+    if(el.dataset.scanReady || !scannable(el) || !el.parentNode) return;
+    el.dataset.scanReady='1';
+    var wrap=document.createElement('div');
+    wrap.className='scan-wrap'+(el.tagName==='TEXTAREA'?' scan-wrap-ta':'');
+    el.parentNode.insertBefore(wrap, el);
+    wrap.appendChild(el);
+    var b=document.createElement('button');
+    b.type='button'; b.className='scan-btn'; b.title='掃描條碼輸入'; b.setAttribute('aria-label','掃描條碼輸入');
+    b.innerHTML=SCAN_ICON;
+    b.addEventListener('click', function(ev){ ev.preventDefault(); scanInto(el); });
+    wrap.appendChild(b);
+  });
+}
+function scanErrorText(code){
+  return ({camera_permission:'沒有相機權限，請允許使用相機',camera_unavailable:'無法開啟相機（沒有相機或被占用）',engine_unavailable:'條碼辨識元件載入失敗，請確認網路',
+    popup_blocked:'瀏覽器擋住了掃描視窗，請允許彈出視窗',no_scan_page:'請從 App 或 GitHub 網頁外殼開啟才能掃描',native_unavailable:'App 掃描功能無法使用',
+    invalid_result:'讀到的條碼內容無效，請重新掃描',bad_request:'掃描要求格式錯誤'})[code] || ('掃描失敗：'+code);
+}
+async function scanInto(el){
+  if(typeof BarcodeScan==='undefined'){ toast('條碼模組未載入'); return; }
+  var r;
+  try{ r=await BarcodeScan.scanLive({confirm:true, scanPageUrl:scanPageUrl(), hint:'把條碼放進框內並對準十字'}); }
+  catch(e){ r={status:'error', error:String((e && e.message) || e)}; }
+  if(!r || r.status==='cancel') return;
+  if(r.status!=='ok'){ toast(scanErrorText(r.error), 3000); return; }
+  var text=String(r.text||'').replace(/[\r\n\t]+/g,' ').trim();
+  if(el.type==='number'){
+    var num=text.replace(/[^\d.\-]/g,'');
+    if(!num || isNaN(Number(num))){ toast('掃到的內容不是數字：'+text, 3000); return; }
+    text=num;
+  }
+  if(el.maxLength>0 && text.length>el.maxLength) text=text.substring(0, el.maxLength);
+  if(el.tagName==='TEXTAREA' && el.value.trim()) el.value=el.value.replace(/\s+$/,'')+'\n'+text; else el.value=text;
+  el.dispatchEvent(new Event('input',{bubbles:true}));
+  el.dispatchEvent(new Event('change',{bubbles:true}));
+  try{ el.focus(); }catch(e){}
+  toast('已帶入條碼：'+text, 1500);
+  var submit=el.dataset.scanSubmit;
+  if(submit && typeof window[submit]==='function') window[submit]();
+}
+(function(){
+  var pending=false;
+  new MutationObserver(function(){ if(pending) return; pending=true; setTimeout(function(){ pending=false; attachScanButtons(document); }, 50); })
+    .observe(document.documentElement, {childList:true, subtree:true});
+})();
+
 /* ---------- 啟動 ---------- */
 async function bootstrap(){
   var j = await api('apiBootstrap');
@@ -425,6 +492,7 @@ async function bootstrap(){
 }
 
 window.addEventListener('load', async function(){
+  attachScanButtons(document);
   detectBridge();
   try{ await bootstrap(); }
   catch(e){ $('loadingMask').innerText='資料載入失敗：'+e.message+'\n請確認已執行 setup() 並重新整理。'; return; }

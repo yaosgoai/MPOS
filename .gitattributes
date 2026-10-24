@@ -7,3 +7,5 @@ android/gradlew text eol=lf
 *.jar binary
 *.jks binary
 *.apk binary
+*.jpg binary
+*.png binary

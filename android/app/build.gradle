@@ -56,8 +56,13 @@ android {
 }
 
 dependencies {
+    // 條碼模組：原生掃描畫面 + WebView 橋接（GAS 畫面的所有輸入欄位都可掃描帶入）
+    implementation project(':barcode-scanner')
+    implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')
+    implementation 'androidx.activity:activity:1.9.2'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20240303'
+    androidTestImplementation 'androidx.webkit:webkit:1.8.0'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test:runner:1.6.2'
     androidTestImplementation 'androidx.test:rules:1.6.1'
