@@ -114,6 +114,10 @@
 <!-- ================= 新增訂購 步驟 2：確認數量（預設 1）+ 此項快速備註 ================= -->
 <div id="itemOverlay" class="checkout-overlay">
   <div class="checkout-modal item-modal">
+    <div class="item-barcode-row item-barcode-top">
+      <label for="itemDlgBarcode">條碼</label>
+      <input id="itemDlgBarcode" data-scan-submit="switchItemByBarcode" enterkeyhint="go" placeholder="刷品項條碼直接切換品項" onkeydown="if(event.key==='Enter'){event.preventDefault();switchItemByBarcode();}">
+    </div>
     <div class="checkout-head">
       <div class="checkout-title" id="itemTitle">確認數量與備註</div>
     </div>
@@ -135,11 +139,12 @@
       <textarea id="lineNoteInput" placeholder="此項的特殊備註（選填），例如：多烤一點"></textarea>
     </div>
     <div id="pickerTotal" class="picker-total item-subtotal">小計 0 元</div>
-    <div class="item-foot item-foot-3">
-      <button id="pickerBackBtn" class="main-btn gray-btn" onclick="backToMenu()">重新挑選</button>
-      <button id="pickerDeleteBtn" class="main-btn clear-btn" style="display:none" onclick="deletePickerLine()">刪除此項</button>
-      <button id="pickerMoreBtn" class="main-btn blue-btn" onclick="savePickerLine(true)">繼續挑選</button>
-      <button id="pickerDoneBtn" class="main-btn print-btn" onclick="savePickerLine(false)">回主訂單</button>
+    <button id="pickerDeleteBtn" class="main-btn clear-btn picker-delete" style="display:none" onclick="deletePickerLine()">刪除此項</button>
+    <div class="item-foot item-foot-4">
+      <button id="pickerBackBtn" class="main-btn gray-btn" onclick="restartPick()" title="不以目前品項異動訂單，改挑下一個">重新挑選</button>
+      <button id="pickerMoreBtn" class="main-btn blue-btn" onclick="savePickerLine(true)" title="帶回訂單並繼續挑選下一個">選定續挑</button>
+      <button id="pickerDoneBtn" class="main-btn print-btn" onclick="savePickerLine(false)" title="帶回訂單並離開">選定離開</button>
+      <button id="pickerExitBtn" class="main-btn clear-btn" onclick="closeItemDialog()" title="直接離開，不異動訂單">回主選單</button>
     </div>
   </div>
 </div>
@@ -851,8 +856,8 @@ function openItemDialog(){
   var editing=!!picker.key;
   $('itemTitle').innerText = editing ? '修改訂購項目' : '確認數量與備註';
   $('pickerDeleteBtn').style.display = editing ? 'inline-block' : 'none';
-  $('pickerMoreBtn').style.display = editing ? 'none' : 'inline-block';
   $('lineNoteInput').value = picker.custom || '';
+  $('itemDlgBarcode').value = '';
   setLineNoteBox(!!(picker.notes.length || picker.custom));
   renderPicker();
   $('itemOverlay').classList.add('show');
@@ -866,6 +871,15 @@ function setLineNoteBox(open){
   $('lineNoteToggle').innerText = '單品項備註' + (n ? '（'+n+'）' : '') + (open ? ' ▲' : ' ▼');
 }
 function toggleLineNoteBox(){ setLineNoteBox($('lineNoteBox').style.display==='none'); }
+/** 確認數量視窗最上方：刷品項條碼直接切換此項的品項（數量、備註保留） */
+function switchItemByBarcode(){
+  var code=$('itemDlgBarcode').value.trim(); if(!code || !picker) return;
+  var m=(appData.menu||[]).filter(function(x){ return String(x.barcode||'')===code || String(x.id)===code; })[0];
+  $('itemDlgBarcode').value='';
+  if(!m){ toast('查無此條碼的商品：'+code, 2500); return; }
+  picker.id=m.id; renderPicker(); setLineNoteBox($('lineNoteBox').style.display!=='none');
+  toast('已切換為：'+m.name, 1200);
+}
 /** 選品項畫面最上方：刷商品條碼（或輸入商品代號）直接選取該品項 → 進入確認數量 */
 function changeItemByBarcode(){
   var code=$('itemBarcodeInput').value.trim(); if(!code) return;
@@ -873,6 +887,14 @@ function changeItemByBarcode(){
   $('itemBarcodeInput').value='';
   if(!m){ toast('查無此條碼的商品：'+code, 2500); return; }
   pickItem(m.id);
+}
+/** 重新挑選：放棄目前品項（不異動訂單），回到選品項畫面挑下一個 */
+function restartPick(){
+  $('itemOverlay').classList.remove('show');
+  picker={key:null,id:null,qty:1,notes:[],custom:''};
+  $('pickerTitle').innerText='新購：選擇商品';
+  renderNotes(); renderPickerMenu();
+  $('orderOverlay').classList.add('show');
 }
 function backToMenu(){
   picker.custom=$('lineNoteInput').value.trim();

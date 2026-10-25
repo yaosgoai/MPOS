@@ -1017,17 +1017,19 @@ test('v1.15 選品項畫面最上方條碼輸入；確認數量視窗：單品�
   await frame.waitForSelector('#orderOverlay.show');
   const yb = await frame.evaluate(() => [document.querySelector('#orderOverlay .item-barcode-row').getBoundingClientRect().top, document.getElementById('pickerTitle').getBoundingClientRect().top]);
   assert.ok(yb[0] < yb[1], '選品項的條碼輸入在最上方');
-  assert.equal(await frame.locator('#itemOverlay #itemBarcodeInput').count(), 0, '確認數量視窗不再有條碼列');
+
   // 刷條碼直接選品項
   await frame.fill('#itemBarcodeInput', '4710099');
   await frame.press('#itemBarcodeInput', 'Enter');
   await frame.waitForSelector('#itemOverlay.show');
   assert.match(await frame.innerText('#pickerItem'), /茶凍/);
   assert.equal(await frame.locator('#itemOverlay .checkout-close').count(), 0, '右上角關閉已移除');
-  assert.deepEqual(await frame.$$eval('#itemOverlay .item-foot .main-btn', (b) => b.filter((x) => x.offsetParent).map((x) => x.innerText.trim())), ['重新挑選', '繼續挑選', '回主訂單']);
+  assert.deepEqual(await frame.$$eval('#itemOverlay .item-foot .main-btn', (b) => b.filter((x) => x.offsetParent).map((x) => x.innerText.trim())), ['重新挑選', '選定續挑', '選定離開', '回主選單']);
   await frame.click('#qtyQuick .qty-quick-btn[data-q="3"]');
-  // 重新挑選 → 用掃描按鈕刷條碼換品項（數量保留）
+  // 重新挑選：不異動訂單，回選品項畫面
   await frame.click('#pickerBackBtn');
+  await frame.waitForSelector('#orderOverlay.show');
+  assert.equal(await frame.evaluate(() => cartItems().length), 0, '重新挑選不異動訂單');
   await frame.waitForSelector('#orderOverlay.show');
   await frame.evaluate(() => { window.__nextScan = { status: 'ok', text: 'custard', format: 'code_128', engine: 'mlkit' }; });
   await frame.click('#itemBarcodeInput + .scan-btn');
@@ -1041,18 +1043,41 @@ test('v1.15 選品項畫面最上方條碼輸入；確認數量視窗：單品�
   await frame.press('#itemBarcodeInput', 'Enter');
   await frame.waitForFunction(() => document.getElementById('toast').innerText.includes('查無此條碼'));
   await frame.click('.item-btn[data-id="custard"]');
+  assert.equal(await frame.inputValue('#pickerQtyNum'), '1', '重新挑選後數量重新從 1 開始');
+  await frame.click('#qtyQuick .qty-quick-btn[data-q="3"]');
+  // 確認數量視窗最上方條碼：直接切換品項（數量保留）
+  const yt = await frame.evaluate(() => [document.querySelector('#itemOverlay .item-barcode-row').getBoundingClientRect().top, document.getElementById('itemTitle').getBoundingClientRect().top]);
+  assert.ok(yt[0] < yt[1], '確認數量視窗的條碼在最上方');
+  await frame.fill('#itemDlgBarcode', '4710099');
+  await frame.press('#itemDlgBarcode', 'Enter');
+  await frame.waitForFunction(() => document.getElementById('pickerItem').innerText.includes('茶凍'));
+  assert.equal(await frame.inputValue('#pickerQtyNum'), '3');
+  await frame.evaluate(() => { window.__nextScan = { status: 'ok', text: 'custard', format: 'code_128', engine: 'mlkit' }; });
+  await frame.click('#itemDlgBarcode + .scan-btn');
+  await frame.waitForFunction(() => document.getElementById('pickerItem').innerText.includes('卡士達'));
   // 單品項備註
   assert.equal((await frame.innerText('#lineNoteToggle')).replace(/\s|▼|▲/g, ''), '單品項備註');
   await frame.click('#lineNoteToggle');
   await frame.click('.note-chip >> text=先做');
   assert.match(await frame.innerText('#lineNoteToggle'), /（1）/);
-  await frame.click('#pickerDoneBtn');   // 回主訂單
+  await frame.click('#pickerDoneBtn');   // 選定離開
   assert.equal(await frame.evaluate(() => cartItems()[0].qty), 3);
   assert.equal(await frame.evaluate(() => cartItems()[0].name), '卡士達');
-  // 修改：有備註時自動展開；按鈕為 重新挑選 / 刪除此項 / 回主訂單
+  // 修改：有備註時自動展開；多一顆刪除此項
   await frame.click('#cartArea .cart-row', { button: 'right' });
   assert.equal(await frame.isVisible('#lineNoteBox'), true);
-  assert.deepEqual(await frame.$$eval('#itemOverlay .item-foot .main-btn', (b) => b.filter((x) => x.offsetParent).map((x) => x.innerText.trim())), ['重新挑選', '刪除此項', '回主訂單']);
+  assert.deepEqual(await frame.$$eval('#itemOverlay .item-foot .main-btn', (b) => b.filter((x) => x.offsetParent).map((x) => x.innerText.trim())), ['刪除此項', '重新挑選', '選定續挑', '選定離開', '回主選單'].slice(1));
+  assert.equal(await frame.isVisible('#pickerDeleteBtn'), true);
+  // 回主選單：直接離開不異動
+  await frame.click('#qtyQuick .qty-quick-btn[data-q="9"]');
+  await frame.click('#pickerExitBtn');
+  assert.equal(await frame.evaluate(() => cartItems()[0].qty), 3, '回主選單不異動訂單');
+  // 選定續挑：帶回並繼續挑
+  await frame.click('#newOrderBtn');
+  await frame.click('.item-btn[data-id="cheese"]');
+  await frame.click('#pickerMoreBtn');
+  await frame.waitForSelector('#orderOverlay.show');
+  assert.equal(await frame.evaluate(() => cartItems().length), 2);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
