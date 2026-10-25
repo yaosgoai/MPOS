@@ -1,6 +1,7 @@
-// 由 scripts/deploy.ps1 自動產生，請勿手動修改
-window.MPOS_CONFIG = {
-  "gasUrl": "https://script.google.com/macros/s/AKfycbzROKzak-IwxodfLfrSa2mGKvU1AevDlUr_DrO-gjP3Rn1ptVp_EP59LWmWTnZXiVfBCw/exec",
-  "repo": "yaosgoai/MPOS",
-  "deployedAt": "2026-10-25 10:49:49"
-};
+{
+    "scriptId":  "1ywq8s-oUif5y8xUHg9NCxLEnNISEIzDM56QnerjekI8rIYG8oj3Uka5i",
+    "deploymentId":  "AKfycbzROKzak-IwxodfLfrSa2mGKvU1AevDlUr_DrO-gjP3Rn1ptVp_EP59LWmWTnZXiVfBCw",
+    "repo":  "yaosgoai/MPOS",
+    "pagesUrl":  "https://yaosgoai.github.io/MPOS/",
+    "lastFullSha":  "2ec30e8762a6cebdeaaf12f5df762b3031962daf"
+}

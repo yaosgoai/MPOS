@@ -8,6 +8,9 @@
     6. 下載 APK 到 dist\（有接 Android 裝置時可直接安裝）
 
   模式（-Mode）：
+    Turbo 極速部署驗證：只做 clasp push + 更新 GAS 部署（GAS 沒變更就跳過），推送 GitHub 不等待（約 15~40 秒）
+          不跑任何測試、不做健康檢查；docs 沒變更時 commit 加 [skip ci]，GitHub 完全不跑 Actions
+          適用：改畫面文字、版面、樣式等小修改，想最快看到結果
     Fast  快速部署驗證：本機單元測試 → GAS 部署 → GAS 線上健康檢查 → 推送 GitHub（不等待）（約 1~2 分鐘）
           GitHub Actions 只在背景更新網頁（docs 有變更時），略過自動化測試、線上冒煙測試、APK、模擬器
           適用：只改 GAS 畫面 / 後台、網頁外殼
@@ -21,7 +24,7 @@
     -Message     部署說明
 #>
 param(
-    [ValidateSet('Fast', 'Full')]
+    [ValidateSet('Turbo', 'Fast', 'Full')]
     [string]$Mode = 'Full',
     [switch]$SkipTests,
     [switch]$SkipGas,
@@ -34,7 +37,73 @@ Set-Location $Root
 $cfg = Read-DeployConfig
 if (-not $Message) { $Message = 'MPOS deploy ' + (Get-Date -Format 'yyyy-MM-dd HH:mm') }
 $fast = ($Mode -eq 'Fast')
+$sw = [Diagnostics.Stopwatch]::StartNew()
 Write-Host ''
+if ($Mode -eq 'Turbo') {
+    # ============================================================
+    #  極速部署驗證：最少步驟、不等待任何東西
+    # ============================================================
+    Write-Host '  ★ 極速部署驗證（只更新 GAS，GitHub 背景同步，不跑測試）' -ForegroundColor Cyan
+    if (-not (Test-Path $Clasp)) { Invoke-Native 'npm' @('ci') 'npm ci' }
+    if (-not (Test-Path (Join-Path $Root 'gas\.clasp.json'))) { Fail '找不到 gas\.clasp.json，請先執行「首次設定.bat」。' }
+    if (-not $cfg.deploymentId) { Fail '尚未有 GAS 部署 ID，請先執行一次「一鍵部署_快速部署驗證.bat」或「完整部署驗證」。' }
+
+    # 條碼模組網頁檔（毫秒級）
+    Invoke-Native 'node' @((Join-Path $Root 'scripts\sync_barcode.js')) '同步條碼模組'
+
+    # Android 有變更只提醒，不詢問（極速模式不重編 APK）
+    $since = if ($cfg.PSObject.Properties.Name -contains 'lastFullSha') { $cfg.lastFullSha } else { '' }
+    if ($since) {
+        $androidChanged = (Get-NativeOutput 'git' @('diff', '--name-only', $since, '--', 'android', '條碼模組/android') 'git diff' -AllowFail).Trim()
+        if ($androidChanged) { Write-Warn2 'Android App 有變更但極速模式不重編 APK，需要時請執行「完整部署驗證」。' }
+    }
+
+    # GAS：內容沒變就不 push / 不建新版本
+    $gasDir = Join-Path $Root 'gas'
+    $files = Get-ChildItem (Join-Path $gasDir 'src') -File -Recurse | Sort-Object FullName
+    $files += Get-Item (Join-Path $gasDir 'appsscript.json') -ErrorAction SilentlyContinue
+    $sb = New-Object Text.StringBuilder
+    foreach ($f in $files) { if ($f) { [void]$sb.Append($f.Name).Append((Get-FileHash $f.FullName -Algorithm MD5).Hash) } }
+    $md5 = [Security.Cryptography.MD5]::Create()
+    $gasHash = [BitConverter]::ToString($md5.ComputeHash([Text.Encoding]::UTF8.GetBytes($sb.ToString()))).Replace('-', '')
+    $lastHash = if ($cfg.PSObject.Properties.Name -contains 'lastGasHash') { $cfg.lastGasHash } else { '' }
+    if ($gasHash -eq $lastHash) {
+        Write-Ok 'GAS 程式沒有變更，略過 clasp push'
+    } else {
+        Push-Location $gasDir
+        try {
+            Invoke-Native $Clasp @('push', '-f') 'clasp push'
+            $out = Get-NativeOutput $Clasp @('--json', 'create-deployment', '-d', $Message, '-i', $cfg.deploymentId) 'clasp 部署'
+            $dep = ConvertFrom-LooseJson $out
+            if (-not $dep -or -not $dep.deploymentId) { Write-Host $out; Fail '無法取得 GAS 部署 ID' }
+            Set-ConfigValue $cfg 'lastGasHash' $gasHash
+            Save-DeployConfig $cfg
+            Write-Ok "GAS 已部署：版本 $($dep.versionNumber)（$([int]$sw.Elapsed.TotalSeconds) 秒）"
+        } finally { Pop-Location }
+    }
+
+    # GitHub：有變更才推送；docs 沒變更就加 [skip ci]（不觸發任何 Actions）
+    $wfDir = Join-Path $Root '.github\workflows'
+    New-Item -ItemType Directory -Force -Path $wfDir | Out-Null
+    Copy-Item (Join-Path $Root 'ci\ci-cd.yml') (Join-Path $wfDir 'ci-cd.yml') -Force
+    Invoke-Native 'git' @('add', '-A') 'git add'
+    $changes = (Get-NativeOutput 'git' @('status', '--porcelain') 'git status').Trim()
+    if ($changes) {
+        $docsChanged = (Get-NativeOutput 'git' @('diff', '--cached', '--name-only', '--', 'docs', '.github') 'git diff' -AllowFail).Trim()
+        $msg = if ($docsChanged) { $Message + ' [fast]' } else { $Message + ' [skip ci]' }
+        Invoke-Native 'git' @('commit', '-q', '-m', $msg) 'git commit'
+        Invoke-Native 'git' @('push', '-q', 'origin', 'main') 'git push'
+        if ($docsChanged) { Write-Ok '已推送；網頁外殼有變更，GitHub Pages 會在背景更新（約 1 分鐘，不需等待）' }
+        else { Write-Ok '已推送原始碼備份（[skip ci]：不跑任何 GitHub Actions）' }
+    } else {
+        Write-Info '沒有需要推送到 GitHub 的變更'
+    }
+
+    Write-Step "極速部署完成（共 $([int]$sw.Elapsed.TotalSeconds) 秒）"
+    Write-Info '平板上的 App 不用重裝：按右上角 ⟳（或重新開啟 App）即可看到新版畫面'
+    Write-Info '（未執行任何測試；正式上線前建議跑一次「快速部署驗證」或「完整部署驗證」）'
+    exit 0
+}
 if ($fast) { Write-Host '  ★ 快速部署驗證（GAS + 網頁，不重編 APK）' -ForegroundColor Cyan }
 else { Write-Host '  ★ 完整部署驗證（含 APK 編譯、模擬器測試、安裝）' -ForegroundColor Cyan }
 
