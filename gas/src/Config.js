@@ -2,7 +2,7 @@
  * MPOS Cloud - 設定與預設資料
  * 茉莉花鯛魚燒 POS（GAS 管理後台版）
  */
-var APP_VERSION = 'cloud-1.7.0';
+var APP_VERSION = 'cloud-1.8.0';
 var TZ = 'Asia/Taipei';
 
 var DEFAULT_SHOP = {
@@ -106,7 +106,8 @@ var DEFAULT_RECEIPT_LAYOUT = [
  */
 var TABLES = {
   settings: { key: 'key', cols: [['key', 's'], ['value', 's']] },
-  menu_items: { key: 'id', cols: [['id', 's'], ['category', 's'], ['name', 's'], ['price', 'n'], ['sort_order', 'n'], ['active', 'n']] },
+  menu_items: { key: 'id', cols: [['id', 's'], ['category', 's'], ['name', 's'], ['price', 'n'], ['sort_order', 'n'], ['active', 'n'], ['barcode', 's']] },
+  categories: { key: 'id', cols: [['id', 'n'], ['name', 's'], ['sort_order', 'n']] },
   note_presets: { key: 'id', cols: [['id', 'n'], ['text', 's'], ['sort_order', 'n'], ['active', 'n']] },
   customers: { key: 'phone', cols: [['phone', 's'], ['name', 's'], ['call_count', 'n'], ['last_call_at', 's'], ['last_order_at', 's'], ['created_at', 's']] },
   calls: { key: 'id', cols: [['id', 'n'], ['phone', 's'], ['called_at', 's']] },

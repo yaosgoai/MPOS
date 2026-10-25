@@ -19,7 +19,7 @@ test('setup 建立工作表並匯入種子資料，重複執行不重複匯入',
   const g = fresh();
   const ss = Object.values(g.__store.spreadsheets)[0];
   const names = ss.getSheets().map((s) => s.getName()).sort();
-  assert.deepEqual(names, ['calls', 'customers', 'menu_items', 'note_presets', 'order_items', 'order_sources', 'orders', 'receipt_layout', 'settings']);
+  assert.deepEqual(names, ['calls', 'categories', 'customers', 'menu_items', 'note_presets', 'order_items', 'order_sources', 'orders', 'receipt_layout', 'settings']);
   g.setup();
   const boot = plain(g.apiBootstrap());
   assert.equal(boot.ok, true);
@@ -422,4 +422,50 @@ test('暫存訂單清單：只列未付款且未取消', () => {
   const list = plain(g.apiHeldOrders(7)).orders;
   assert.deepEqual(list.map((o) => o.order_no), [a.order.order_no]);
   assert.equal(list[0].items.length, 1);
+});
+
+test('商品 / 分群 / 快速備註管理：新增修改刪除；已販售的商品不能刪除、不能改名，分群不能改名', () => {
+  const g = fresh(() => new Date('2026-07-04T02:00:00Z'));
+  const cat0 = plain(g.apiAdminCatalog('1234'));
+  assert.ok(cat0.categories.length > 0, '舊資料自動建立商品分群');
+  const custard = cat0.items.find((m) => m.id === 'custard');
+  const catName = custard.category;
+  // 新分群 + 新商品（含條碼）
+  assert.equal(g.apiSaveCategory('1234', { name: '飲料', sort_order: 90 }).ok, true);
+  assert.match(g.apiSaveCategory('1234', { name: '飲料' }).message, /相同名稱/);
+  assert.match(g.apiSaveMenuItem('1234', { category: '不存在', name: 'x', price: 10 }).message, /分群不存在/);
+  assert.equal(g.apiSaveMenuItem('1234', { category: '飲料', name: '紅茶', price: 25, barcode: '4710001' }).ok, true);
+  assert.match(g.apiSaveMenuItem('1234', { category: '飲料', name: '綠茶', price: 25, barcode: '4710001' }).message, /條碼/);
+  let cat = plain(g.apiAdminCatalog('1234'));
+  const tea = cat.items.find((m) => m.name === '紅茶');
+  assert.equal(tea.barcode, '4710001');
+  assert.equal(plain(g.apiBootstrap()).menu.find((m) => m.id === tea.id).barcode, '4710001');
+  // 未販售：可改名、可刪除；分群可改名
+  assert.equal(g.apiSaveMenuItem('1234', Object.assign({}, tea, { name: '冰紅茶' })).ok, true);
+  const drink = cat.categories.find((c) => c.name === '飲料');
+  assert.equal(g.apiSaveCategory('1234', { id: drink.id, name: '茶飲', sort_order: 90 }).ok, true);
+  assert.equal(plain(g.apiAdminCatalog('1234')).items.find((m) => m.id === tea.id).category, '茶飲');
+  assert.match(g.apiDeleteCategory('1234', drink.id).message, /還有 1 項/);
+  // 販售後：不能刪除、不能改名、分群不能改名；可改價格
+  plain(g.apiCreateOrder({ order_source: '現場點餐', items: [{ id: tea.id, qty: 1 }], print: false }));
+  cat = plain(g.apiAdminCatalog('1234'));
+  assert.equal(cat.items.find((m) => m.id === tea.id).sold, true);
+  assert.equal(cat.categories.find((c) => c.name === '茶飲').sold, true);
+  assert.match(g.apiDeleteMenuItem('1234', tea.id).message, /銷售紀錄/);
+  assert.match(g.apiSaveMenuItem('1234', Object.assign({}, tea, { category: '茶飲', name: '奶茶' })).message, /不能修改品名/);
+  assert.equal(g.apiSaveMenuItem('1234', Object.assign({}, tea, { category: '茶飲', name: '冰紅茶', price: 30 })).ok, true);
+  assert.match(g.apiSaveCategory('1234', { id: drink.id, name: '飲品' }).message, /不能修改分群名稱/);
+  // 未販售的可刪除；空分群可刪除
+  g.apiSaveCategory('1234', { name: '測試分群' });
+  const t = plain(g.apiAdminCatalog('1234')).categories.find((c) => c.name === '測試分群');
+  g.apiSaveMenuItem('1234', { category: '測試分群', name: '暫時', price: 1 });
+  const tmp = plain(g.apiAdminCatalog('1234')).items.find((m) => m.name === '暫時');
+  assert.equal(g.apiDeleteMenuItem('1234', tmp.id).ok, true);
+  assert.equal(g.apiDeleteCategory('1234', t.id).ok, true);
+  assert.equal(plain(g.apiAdminCatalog('1234')).categories.some((c) => c.name === '測試分群'), false);
+  // 快速備註刪除
+  const n = plain(g.apiAdminCatalog('1234')).notes[0];
+  assert.equal(g.apiDeleteNote('1234', n.id).ok, true);
+  assert.equal(plain(g.apiAdminCatalog('1234')).notes.some((x) => x.id === n.id), false);
+  assert.ok(catName);
 });

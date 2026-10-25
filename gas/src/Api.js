@@ -44,6 +44,7 @@ function apiBootstrap() {
       all_menu: st.menu,
       notes: st.notes.filter(function (n) { return Number(n.active) === 1; }),
       all_notes: st.notes,
+      categories: st.categories || [],
       sources: st.sources.filter(function (n) { return Number(n.active) === 1; }),
       all_sources: st.sources,
       settings: publicSettings_(st.settings),
@@ -605,23 +606,116 @@ function apiSaveLayout(pin, rows) {
   });
 }
 
+/** 已有銷售紀錄的商品 id（任何狀態的訂單都算） */
+function soldItemIds_() {
+  var s = {};
+  readTable_('order_items').forEach(function (i) { s[String(i.item_id)] = true; });
+  return s;
+}
+
+/** 後台：商品清單（附是否已販售） */
+function apiAdminCatalog(pin) {
+  return wrap_(function () {
+    requirePin_(pin);
+    var st = getStatic_(), sold = soldItemIds_();
+    var items = st.menu.map(function (m) { var x = JSON.parse(JSON.stringify(m)); x.sold = !!sold[String(m.id)]; return x; });
+    var cats = (st.categories || []).map(function (c) {
+      var mine = items.filter(function (m) { return m.category === c.name; });
+      return { id: c.id, name: c.name, sort_order: c.sort_order, item_count: mine.length, sold: mine.some(function (m) { return m.sold; }) };
+    });
+    return { items: items, categories: cats, notes: st.notes };
+  });
+}
+
 function apiSaveMenuItem(pin, p) {
   return wrap_(function () {
     requirePin_(pin);
     p = p || {};
+    var id = String(p.id || '').trim();
+    var old = id ? readTable_('menu_items').filter(function (m) { return String(m.id) === id; })[0] : null;
     var item = {
-      id: String(p.id || '').trim() || ('item_' + Utilities.formatDate(new Date(), TZ, 'yyyyMMddHHmmss') + Math.floor(Math.random() * 1000)),
+      id: id || ('item_' + Utilities.formatDate(new Date(), TZ, 'yyyyMMddHHmmss') + Math.floor(Math.random() * 1000)),
       category: String(p.category || '').trim(),
       name: String(p.name || '').trim(),
       price: parseInt(p.price, 10),
       sort_order: parseInt(p.sort_order, 10) || 0,
       active: truthy_(p.active === undefined ? '1' : p.active) ? 1 : 0,
+      barcode: String(p.barcode === undefined || p.barcode === null ? (old ? old.barcode || '' : '') : p.barcode).trim(),
     };
-    if (!item.category || !item.name) throw new Error('分類與品名不可空白。');
+    if (!item.category || !item.name) throw new Error('分群與品名不可空白。');
     if (isNaN(item.price) || item.price < 0) throw new Error('價格不可小於 0。');
+    var cats = readTable_('categories');
+    if (cats.length && !cats.some(function (c) { return c.name === item.category; })) throw new Error('商品分群不存在：' + item.category + '，請先新增分群。');
+    if (old && old.name !== item.name && soldItemIds_()[id]) throw new Error('「' + old.name + '」已有銷售紀錄，不能修改品名（可改價格、條碼、分群或停用）。');
+    var all = readTable_('menu_items').filter(function (m) { return String(m.id) !== item.id; });
+    if (all.some(function (m) { return m.name === item.name && m.category === item.category; })) throw new Error('同一分群已有相同品名的商品。');
+    if (item.barcode && all.some(function (m) { return String(m.barcode || '') === item.barcode; })) throw new Error('條碼 ' + item.barcode + ' 已用於其他商品。');
     upsert_('menu_items', item);
     invalidateCache_();
     return { items: getStatic_().menu, message: '商品已儲存' };
+  });
+}
+
+/** 刪除商品：已販售過不能刪除（請改停用） */
+function apiDeleteMenuItem(pin, id) {
+  return wrap_(function () {
+    requirePin_(pin);
+    id = String(id || '');
+    var m = readTable_('menu_items').filter(function (x) { return String(x.id) === id; })[0];
+    if (!m) throw new Error('找不到商品。');
+    if (soldItemIds_()[id]) throw new Error('「' + m.name + '」已有銷售紀錄，不能刪除，可改為停用。');
+    deleteWhere_('menu_items', function (x) { return String(x.id) === id; });
+    invalidateCache_();
+    return { message: '商品已刪除' };
+  });
+}
+
+/** 商品分群：新增 / 改名（分群內商品已販售過不能改名；改名會同步更新商品） */
+function apiSaveCategory(pin, p) {
+  return wrap_(function () {
+    requirePin_(pin);
+    p = p || {};
+    var name = String(p.name || '').trim();
+    if (!name) throw new Error('分群名稱不可空白。');
+    if (name.length > 20) throw new Error('分群名稱最多 20 字。');
+    var id = parseInt(p.id, 10) || 0;
+    var cats = readTable_('categories');
+    if (cats.some(function (c) { return c.name === name && Number(c.id) !== id; })) throw new Error('已有相同名稱的分群。');
+    var old = id ? cats.filter(function (c) { return Number(c.id) === id; })[0] : null;
+    if (id && !old) throw new Error('找不到分群。');
+    if (old && old.name !== name) {
+      var sold = soldItemIds_();
+      var items = readTable_('menu_items').filter(function (m) { return m.category === old.name; });
+      if (items.some(function (m) { return sold[String(m.id)]; })) throw new Error('「' + old.name + '」內的商品已有銷售紀錄，不能修改分群名稱。');
+      items.forEach(function (m) { updateFields_('menu_items', m.id, { category: name }); });
+    }
+    upsert_('categories', { id: id || nextId_('categories'), name: name, sort_order: parseInt(p.sort_order, 10) || 0 });
+    invalidateCache_();
+    return { message: '分群已儲存' };
+  });
+}
+
+/** 刪除分群：分群內還有商品不能刪除 */
+function apiDeleteCategory(pin, id) {
+  return wrap_(function () {
+    requirePin_(pin);
+    var c = readTable_('categories').filter(function (x) { return Number(x.id) === Number(id); })[0];
+    if (!c) throw new Error('找不到分群。');
+    var n = readTable_('menu_items').filter(function (m) { return m.category === c.name; }).length;
+    if (n) throw new Error('「' + c.name + '」內還有 ' + n + ' 項商品，請先移到其他分群或刪除。');
+    deleteWhere_('categories', function (x) { return Number(x.id) === Number(id); });
+    invalidateCache_();
+    return { message: '分群已刪除' };
+  });
+}
+
+/** 刪除快速備註（訂單內存的是文字，刪除不影響歷史訂單） */
+function apiDeleteNote(pin, id) {
+  return wrap_(function () {
+    requirePin_(pin);
+    if (!deleteWhere_('note_presets', function (x) { return Number(x.id) === Number(id); })) throw new Error('找不到備註。');
+    invalidateCache_();
+    return { message: '備註已刪除' };
   });
 }
 

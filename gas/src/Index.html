@@ -99,6 +99,10 @@
 <!-- ================= 新增訂購 步驟 1：選擇商品 ================= -->
 <div id="orderOverlay" class="order-overlay">
   <div class="order-modal order-modal-menu">
+    <div class="item-barcode-row item-barcode-top">
+      <label for="itemBarcodeInput">條碼</label>
+      <input id="itemBarcodeInput" data-scan-submit="changeItemByBarcode" enterkeyhint="go" placeholder="刷商品條碼直接選品項" onkeydown="if(event.key==='Enter'){event.preventDefault();changeItemByBarcode();}">
+    </div>
     <div class="checkout-head">
       <div class="checkout-title" id="pickerTitle">新購：選擇商品</div>
       <button class="checkout-close" onclick="closeOrderPicker()">關閉</button>
@@ -112,7 +116,6 @@
   <div class="checkout-modal item-modal">
     <div class="checkout-head">
       <div class="checkout-title" id="itemTitle">確認數量與備註</div>
-      <button class="checkout-close" onclick="closeItemDialog()">關閉</button>
     </div>
     <div id="pickerItem" class="picker-item"></div>
     <div class="qty-box picker-qty">
@@ -126,15 +129,17 @@
       <button type="button" class="qty-quick-btn" data-q="4">4</button><button type="button" class="qty-quick-btn" data-q="5">5</button><button type="button" class="qty-quick-btn" data-q="6">6</button>
       <button type="button" class="qty-quick-btn" data-q="7">7</button><button type="button" class="qty-quick-btn" data-q="8">8</button><button type="button" class="qty-quick-btn" data-q="9">9</button>
     </div>
-    <h2 class="section-title" style="margin-top:10px;">此項快速備註</h2>
-    <div id="notePresetArea" class="note-grid"></div>
-    <textarea id="lineNoteInput" placeholder="此項的特殊備註（選填），例如：多烤一點"></textarea>
-    <div class="item-foot">
-      <div id="pickerTotal" class="picker-total">小計 0 元</div>
-      <button id="pickerBackBtn" class="main-btn gray-btn" onclick="backToMenu()">換商品</button>
+    <button type="button" id="lineNoteToggle" class="line-note-toggle" onclick="toggleLineNoteBox()">單品項備註</button>
+    <div id="lineNoteBox" class="line-note-box" style="display:none">
+      <div id="notePresetArea" class="note-grid"></div>
+      <textarea id="lineNoteInput" placeholder="此項的特殊備註（選填），例如：多烤一點"></textarea>
+    </div>
+    <div id="pickerTotal" class="picker-total item-subtotal">小計 0 元</div>
+    <div class="item-foot item-foot-3">
+      <button id="pickerBackBtn" class="main-btn gray-btn" onclick="backToMenu()">重新挑選</button>
       <button id="pickerDeleteBtn" class="main-btn clear-btn" style="display:none" onclick="deletePickerLine()">刪除此項</button>
-      <button id="pickerMoreBtn" class="main-btn blue-btn" onclick="savePickerLine(true)">加入並繼續點</button>
-      <button id="pickerDoneBtn" class="main-btn print-btn" onclick="savePickerLine(false)">加入訂單</button>
+      <button id="pickerMoreBtn" class="main-btn blue-btn" onclick="savePickerLine(true)">繼續挑選</button>
+      <button id="pickerDoneBtn" class="main-btn print-btn" onclick="savePickerLine(false)">回主訂單</button>
     </div>
   </div>
 </div>
@@ -297,24 +302,38 @@
       </div>
 
       <div id="admin-products" class="admin-section">
-        <div class="field-grid-4">
-          <div><label>分類</label><input id="mCategory" placeholder="鯛魚燒口味"></div>
+        <h2 class="section-title">商品分群</h2>
+        <div class="field-grid">
+          <div><label>分群名稱</label><input id="cName" maxlength="20" placeholder="例如：鯛魚燒口味"></div>
+          <div><label>排序</label><input id="cSort" type="number" value="100"></div>
+          <div><label>&nbsp;</label><div class="btn-pair"><button class="main-btn blue-btn" onclick="saveCategory()">儲存分群</button><button class="main-btn gray-btn" onclick="clearCategoryForm()">清除</button></div></div>
+        </div>
+        <input id="cId" type="hidden">
+        <div id="categoryAdminArea" style="margin:10px 0 18px;"></div>
+
+        <h2 class="section-title">商品</h2>
+        <div class="field-grid">
+          <div><label>分群</label><select id="mCategory"></select></div>
           <div><label>品名</label><input id="mName" placeholder="新品項"></div>
           <div><label>價格</label><input id="mPrice" type="number" value="0"></div>
+          <div><label>條碼</label><input id="mBarcode" placeholder="刷商品條碼（選填）"></div>
           <div><label>排序</label><input id="mSort" type="number" value="100"></div>
+          <div><label>狀態</label><select id="mActive"><option value="1">上架</option><option value="0">停用</option></select></div>
         </div>
-        <input id="mId" type="hidden"><input id="mActive" type="hidden" value="1">
+        <div id="mNameHint" class="hint" style="display:none">此商品已有銷售紀錄：品名不能修改、不能刪除（可改價格、條碼、分群或停用）。</div>
+        <input id="mId" type="hidden">
         <div class="action-row"><button class="main-btn blue-btn" onclick="saveMenuItem()">儲存商品</button><button class="main-btn gray-btn" onclick="clearMenuForm()">清除表單</button></div>
         <div id="menuAdminArea" style="margin-top:12px;"></div>
       </div>
 
       <div id="admin-notes" class="admin-section">
         <div class="field-grid">
-          <div><label>備註文字</label><input id="nText" placeholder="例如：先做"></div>
+          <div><label>快速備註文字</label><input id="nText" placeholder="例如：先做"></div>
           <div><label>排序</label><input id="nSort" type="number" value="100"></div>
-          <div><label>&nbsp;</label><button class="main-btn blue-btn" onclick="saveNote()">儲存備註</button></div>
+          <div><label>狀態</label><select id="nActive"><option value="1">啟用</option><option value="0">停用</option></select></div>
         </div>
-        <input id="nId" type="hidden"><input id="nActive" type="hidden" value="1">
+        <input id="nId" type="hidden">
+        <div class="action-row"><button class="main-btn blue-btn" onclick="saveNote()">儲存備註</button><button class="main-btn gray-btn" onclick="clearNoteForm()">清除表單</button></div>
         <div id="noteAdminArea" style="margin-top:12px;"></div>
       </div>
 
@@ -775,6 +794,7 @@ function switchAdminSection(name, btn){
   if(btn) btn.classList.add('active');
   $('admin-'+name).classList.add('active');
   if(name==='orders') loadOrders();
+  if(name==='products' || name==='notes') loadCatalog();
   if(name==='cancel'){ if(!$('cancelFrom').value) cancelRange(29, true); loadCancelStats(); }
 }
 
@@ -787,6 +807,8 @@ function total(){return cartItems().reduce(function(s,i){return s+i.price*i.qty;
 
 function renderMenu(){
   var gr=groupByCategory(appData.menu||[]), html='';
+  var co={}; (appData.categories||[]).forEach(function(c,i){ co[c.name]=i; });
+  gr.order.sort(function(a,b){ return (co[a]!=null?co[a]:999)-(co[b]!=null?co[b]:999); });
   gr.order.forEach(function(cat){
     html+='<div class="category"><div class="category-title">'+escapeHtml(cat)+'</div><div class="menu-grid">';
     gr.g[cat].forEach(function(item){ html+='<button class="item-btn" data-id="'+escapeHtml(item.id)+'" onclick="pickItem(this.dataset.id)"><div class="item-name">'+escapeHtml(item.name)+'</div><div class="item-price">'+money(item.price)+'</div></button>'; });
@@ -830,12 +852,28 @@ function openItemDialog(){
   $('itemTitle').innerText = editing ? '修改訂購項目' : '確認數量與備註';
   $('pickerDeleteBtn').style.display = editing ? 'inline-block' : 'none';
   $('pickerMoreBtn').style.display = editing ? 'none' : 'inline-block';
-  $('pickerDoneBtn').innerText = editing ? '更新此項' : '加入訂單';
   $('lineNoteInput').value = picker.custom || '';
+  setLineNoteBox(!!(picker.notes.length || picker.custom));
   renderPicker();
   $('itemOverlay').classList.add('show');
 }
 function closeItemDialog(){ $('itemOverlay').classList.remove('show'); picker=null; }
+/** 單品項備註：按下才展開快速備註與自訂備註 */
+function setLineNoteBox(open){
+  $('lineNoteBox').style.display = open ? '' : 'none';
+  $('lineNoteToggle').classList.toggle('open', !!open);
+  var n = picker ? picker.notes.length + (($('lineNoteInput').value||'').trim() ? 1 : 0) : 0;
+  $('lineNoteToggle').innerText = '單品項備註' + (n ? '（'+n+'）' : '') + (open ? ' ▲' : ' ▼');
+}
+function toggleLineNoteBox(){ setLineNoteBox($('lineNoteBox').style.display==='none'); }
+/** 選品項畫面最上方：刷商品條碼（或輸入商品代號）直接選取該品項 → 進入確認數量 */
+function changeItemByBarcode(){
+  var code=$('itemBarcodeInput').value.trim(); if(!code) return;
+  var m=(appData.menu||[]).filter(function(x){ return String(x.barcode||'')===code || String(x.id)===code; })[0];
+  $('itemBarcodeInput').value='';
+  if(!m){ toast('查無此條碼的商品：'+code, 2500); return; }
+  pickItem(m.id);
+}
 function backToMenu(){
   picker.custom=$('lineNoteInput').value.trim();
   $('itemOverlay').classList.remove('show');
@@ -860,7 +898,7 @@ document.addEventListener('click', function(e){
   var b=e.target.closest && e.target.closest('.qty-quick-btn'); if(!b) return;
   pickerQtySet(b.dataset.q);
 });
-function toggleNote(i){ if(!picker)return; var t=appData.notes[i].text, k=picker.notes.indexOf(t); if(k>=0)picker.notes.splice(k,1); else picker.notes.push(t); renderNotes(); }
+function toggleNote(i){ if(!picker)return; var t=appData.notes[i].text, k=picker.notes.indexOf(t); if(k>=0)picker.notes.splice(k,1); else picker.notes.push(t); renderNotes(); setLineNoteBox(true); }
 function renderPicker(){
   var item = picker && picker.id ? menuItem(picker.id) : null;
   var el=$('pickerItem');
@@ -1602,21 +1640,63 @@ async function lookupOrder(){
 }
 
 /* ---------- 後台：商品 / 備註 ---------- */
+/* 後台：商品分群 / 商品 / 快速備註（新增、修改、刪除；已販售的商品不能刪除與改名） */
+var adminCatalog=null;
+async function loadCatalog(){
+  try{ adminCatalog=await api('apiAdminCatalog', await askPin()); }catch(e){ adminCatalog=null; }
+  renderAdminMenu(); renderAdminNotes();
+}
+function catalogItems(){ return adminCatalog ? adminCatalog.items : (appData.all_menu||[]); }
+function catalogCats(){ return adminCatalog ? adminCatalog.categories : (appData.categories||[]); }
+function catalogNotes(){ return adminCatalog ? adminCatalog.notes : (appData.all_notes||[]); }
 function renderAdminMenu(){
-  var html='<table><thead><tr><th>分類</th><th>品名</th><th>價格</th><th>排序</th><th>狀態</th><th>動作</th></tr></thead><tbody>';
-  (appData.all_menu||[]).forEach(function(m,i){ html+='<tr><td>'+escapeHtml(m.category)+'</td><td>'+escapeHtml(m.name)+'</td><td>'+money(m.price)+'</td><td>'+m.sort_order+'</td><td>'+(Number(m.active)?'啟用':'停用')+'</td><td><button class="small-btn blue-btn" onclick="editMenu('+i+')">編輯</button><button class="small-btn danger-btn" onclick="disableMenu('+i+')">停用</button></td></tr>'; });
+  var cats=catalogCats(), items=catalogItems();
+  var ch='<table><thead><tr><th>分群</th><th>商品數</th><th>排序</th><th>動作</th></tr></thead><tbody>';
+  cats.forEach(function(c,i){
+    var cnt=c.item_count!=null?c.item_count:items.filter(function(m){return m.category===c.name;}).length;
+    ch+='<tr><td><b>'+escapeHtml(c.name)+'</b>'+(c.sold?' <span class="sold-tag">已販售</span>':'')+'</td><td class="num-cell">'+cnt+'</td><td class="num-cell">'+c.sort_order+'</td><td>'+
+      '<button class="small-btn blue-btn" onclick="editCategory('+i+')">編輯</button>'+
+      (cnt?'':'<button class="small-btn danger-btn" onclick="deleteCategory('+i+')">刪除</button>')+'</td></tr>';
+  });
+  $('categoryAdminArea').innerHTML=ch+'</tbody></table>';
+  var sel=$('mCategory'), cur=sel.value;
+  sel.innerHTML=cats.map(function(c){ return '<option value="'+escapeHtml(c.name)+'">'+escapeHtml(c.name)+'</option>'; }).join('');
+  if(cur) sel.value=cur;
+  var html='<table><thead><tr><th>分群</th><th>品名</th><th>價格</th><th>條碼</th><th>排序</th><th>狀態</th><th>動作</th></tr></thead><tbody>';
+  items.forEach(function(m,i){
+    html+='<tr'+(Number(m.active)?'':' class="row-off"')+'><td>'+escapeHtml(m.category)+'</td><td><b>'+escapeHtml(m.name)+'</b>'+(m.sold?' <span class="sold-tag">已販售</span>':'')+'</td><td class="num-cell">'+money(m.price)+'</td><td>'+escapeHtml(m.barcode||'')+'</td><td class="num-cell">'+m.sort_order+'</td><td>'+(Number(m.active)?'上架':'停用')+'</td><td>'+
+      '<button class="small-btn blue-btn" onclick="editMenu('+i+')">編輯</button>'+
+      (m.sold?'':'<button class="small-btn danger-btn" onclick="deleteMenu('+i+')">刪除</button>')+'</td></tr>';
+  });
   $('menuAdminArea').innerHTML=html+'</tbody></table>';
 }
-function editMenu(i){var m=appData.all_menu[i];$('mId').value=m.id;$('mCategory').value=m.category;$('mName').value=m.name;$('mPrice').value=m.price;$('mSort').value=m.sort_order;$('mActive').value='1';}
-function clearMenuForm(){$('mId').value='';$('mCategory').value='';$('mName').value='';$('mPrice').value='0';$('mSort').value='100';$('mActive').value='1';}
-async function saveMenuItem(){
-  var p={id:$('mId').value,category:$('mCategory').value,name:$('mName').value,price:$('mPrice').value,sort_order:$('mSort').value,active:$('mActive').value};
-  try{ await api('apiSaveMenuItem', await askPin(), p); await bootstrap(); clearMenuForm(); toast('商品已儲存'); }catch(e){ alert(e.message); }
+function editCategory(i){ var c=catalogCats()[i]; $('cId').value=c.id; $('cName').value=c.name; $('cSort').value=c.sort_order; $('cName').readOnly=!!c.sold; if(c.sold) toast('此分群的商品已販售，分群名稱不能修改（可改排序）', 2500); }
+function clearCategoryForm(){ $('cId').value=''; $('cName').value=''; $('cSort').value='100'; $('cName').readOnly=false; }
+async function saveCategory(){
+  try{ await api('apiSaveCategory', await askPin(), {id:$('cId').value, name:$('cName').value, sort_order:$('cSort').value}); clearCategoryForm(); await bootstrap(); await loadCatalog(); toast('分群已儲存'); }catch(e){ alert(e.message); }
 }
-async function disableMenu(i){ if(!confirm('確認停用商品？歷史訂單仍會保留。'))return; try{ await api('apiDisableMenuItem', await askPin(), appData.all_menu[i].id); await bootstrap(); }catch(e){ alert(e.message); } }
+async function deleteCategory(i){
+  var c=catalogCats()[i]; if(!confirm('確認刪除分群「'+c.name+'」？')) return;
+  try{ await api('apiDeleteCategory', await askPin(), c.id); await bootstrap(); await loadCatalog(); toast('分群已刪除'); }catch(e){ alert(e.message); }
+}
+function editMenu(i){
+  var m=catalogItems()[i];
+  $('mId').value=m.id; $('mCategory').value=m.category; $('mName').value=m.name; $('mPrice').value=m.price; $('mBarcode').value=m.barcode||''; $('mSort').value=m.sort_order; $('mActive').value=Number(m.active)?'1':'0';
+  $('mName').readOnly=!!m.sold; $('mNameHint').style.display=m.sold?'block':'none';
+}
+function clearMenuForm(){$('mId').value='';$('mName').value='';$('mPrice').value='0';$('mBarcode').value='';$('mSort').value='100';$('mActive').value='1';$('mName').readOnly=false;$('mNameHint').style.display='none';}
+async function saveMenuItem(){
+  var p={id:$('mId').value,category:$('mCategory').value,name:$('mName').value,price:$('mPrice').value,barcode:$('mBarcode').value,sort_order:$('mSort').value,active:$('mActive').value};
+  try{ await api('apiSaveMenuItem', await askPin(), p); await bootstrap(); await loadCatalog(); clearMenuForm(); toast('商品已儲存'); }catch(e){ alert(e.message); }
+}
+async function deleteMenu(i){
+  var m=catalogItems()[i]; if(!confirm('確認刪除商品「'+m.name+'」？')) return;
+  try{ await api('apiDeleteMenuItem', await askPin(), m.id); await bootstrap(); await loadCatalog(); toast('商品已刪除'); }catch(e){ alert(e.message); }
+}
+async function disableMenu(i){ var m=catalogItems()[i]; try{ await api('apiDisableMenuItem', await askPin(), m.id); await bootstrap(); await loadCatalog(); }catch(e){ alert(e.message); } }
 function renderAdminNotes(){
-  var html='<table><thead><tr><th>備註</th><th>排序</th><th>狀態</th><th>動作</th></tr></thead><tbody>';
-  (appData.all_notes||[]).forEach(function(n,i){ html+='<tr><td>'+escapeHtml(n.text)+'</td><td>'+n.sort_order+'</td><td>'+(Number(n.active)?'啟用':'停用')+'</td><td><button class="small-btn blue-btn" onclick="editNote('+i+')">編輯</button><button class="small-btn danger-btn" onclick="disableNote('+i+')">停用</button></td></tr>'; });
+  var html='<table><thead><tr><th>快速備註</th><th>排序</th><th>狀態</th><th>動作</th></tr></thead><tbody>';
+  catalogNotes().forEach(function(n,i){ html+='<tr'+(Number(n.active)?'':' class="row-off"')+'><td><b>'+escapeHtml(n.text)+'</b></td><td class="num-cell">'+n.sort_order+'</td><td>'+(Number(n.active)?'啟用':'停用')+'</td><td><button class="small-btn blue-btn" onclick="editNote('+i+')">編輯</button><button class="small-btn danger-btn" onclick="deleteNote('+i+')">刪除</button></td></tr>'; });
   $('noteAdminArea').innerHTML=html+'</tbody></table>';
 }
 function renderAdminSources(){
@@ -1630,10 +1710,12 @@ async function saveSource(){
   try{ await api('apiSaveSource', await askPin(), p); $('srcId').value='';$('srcName').value='';$('srcSort').value='100'; await bootstrap(); toast('訂單來源已儲存'); }catch(e){ alert(e.message); }
 }
 async function disableSource(i){ if(!confirm('確認停用此訂單來源？歷史訂單仍會保留。'))return; try{ await api('apiDisableSource', await askPin(), appData.all_sources[i].id); await bootstrap(); }catch(e){ alert(e.message); } }
-function editNote(i){var n=appData.all_notes[i];$('nId').value=n.id;$('nText').value=n.text;$('nSort').value=n.sort_order;$('nActive').value='1';}
+function editNote(i){var n=catalogNotes()[i];$('nId').value=n.id;$('nText').value=n.text;$('nSort').value=n.sort_order;$('nActive').value=Number(n.active)?'1':'0';}
+function clearNoteForm(){ $('nId').value='';$('nText').value='';$('nSort').value='100';$('nActive').value='1'; }
+async function deleteNote(i){ var n=catalogNotes()[i]; if(!confirm('確認刪除快速備註「'+n.text+'」？（已下的訂單不受影響）')) return; try{ await api('apiDeleteNote', await askPin(), n.id); await bootstrap(); await loadCatalog(); toast('備註已刪除'); }catch(e){ alert(e.message); } }
 async function saveNote(){
   var p={id:$('nId').value,text:$('nText').value,sort_order:$('nSort').value,active:$('nActive').value};
-  try{ await api('apiSaveNote', await askPin(), p); $('nId').value='';$('nText').value='';$('nSort').value='100'; await bootstrap(); toast('備註已儲存'); }catch(e){ alert(e.message); }
+  try{ await api('apiSaveNote', await askPin(), p); clearNoteForm(); await bootstrap(); await loadCatalog(); toast('備註已儲存'); }catch(e){ alert(e.message); }
 }
 async function disableNote(i){ if(!confirm('確認停用備註？'))return; try{ await api('apiDisableNote', await askPin(), appData.all_notes[i].id); await bootstrap(); }catch(e){ alert(e.message); } }
 async function changePin(){

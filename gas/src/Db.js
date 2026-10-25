@@ -274,7 +274,18 @@ function getStatic_() {
     sources = DEFAULT_ORDER_SOURCES.map(function (x) { return JSON.parse(JSON.stringify(x)); });
   }
   sources.sort(function (a, b) { return a.sort_order - b.sort_order || a.id - b.id; });
-  var data = { settings: settings, menu: menu, notes: notes, sources: sources, layout: layout };
+  var categories = readTable_('categories').map(strip_);
+  if (!categories.length && menu.length) {
+    // 舊版資料庫升級：依現有商品分類建立「商品分群」
+    var seen = {}, order = 0;
+    menu.forEach(function (m) {
+      var c = String(m.category || '').trim();
+      if (c && !seen[c]) { seen[c] = 1; order += 10; categories.push({ id: order / 10, name: c, sort_order: order }); }
+    });
+    if (categories.length) appendRows_('categories', categories);
+  }
+  categories.sort(function (a, b) { return a.sort_order - b.sort_order || a.id - b.id; });
+  var data = { settings: settings, menu: menu, notes: notes, sources: sources, layout: layout, categories: categories };
   if (cache) {
     try { cache.put(CACHE_KEY_STATIC, JSON.stringify(data), 600); } catch (e) { /* ignore */ }
   }

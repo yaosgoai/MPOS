@@ -439,4 +439,20 @@ body.measuring #tab-pos #cartArea,body.measuring #tab-pos .cart-grid{flex:none;m
 .dt-total b{font-size:var(--fs-2xl);color:var(--danger)}
 .detail-bottom{grid-template-columns:1fr auto}
 .detail-bottom .cf-close{grid-column:2;min-width:120px}
+
+/* ---- v1.15：確認數量視窗（條碼換品項、單品項備註收合、三個按鈕） ---- */
+.item-barcode-row{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center;margin:8px 0 4px}
+.item-barcode-row label{margin:0;font-size:var(--fs-md)}
+.line-note-toggle{display:block;width:100%;margin:8px 0 4px;padding:10px;border:2px dashed var(--accent);border-radius:12px;background:#fff8e8;color:var(--main2);font-size:var(--fs-lg);font-weight:900;cursor:pointer;font-family:inherit}
+.line-note-toggle.open{border-style:solid;background:#fff0c8}
+.line-note-box{margin-bottom:6px}
+.item-subtotal{text-align:right;margin-top:8px}
+.item-modal .item-foot.item-foot-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.item-modal .item-foot.item-foot-3 .main-btn{padding:14px 4px;font-size:var(--fs-md)}
+@media (max-width:600px){ .item-modal .item-foot.item-foot-3{grid-template-columns:repeat(3,minmax(0,1fr))} }
+
+.sold-tag{display:inline-block;border-radius:999px;padding:1px 8px;background:#e8f0fa;color:var(--blue);font-size:var(--fs-xs);font-weight:900}
+tr.row-off td{color:#999;background:#f6f6f6}
+.btn-pair{display:flex;gap:6px}.btn-pair .main-btn{flex:1}
+.item-barcode-top{margin:0 0 8px;padding-bottom:8px;border-bottom:2px solid var(--border)}
 </style>

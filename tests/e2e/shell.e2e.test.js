@@ -109,6 +109,8 @@ test('外殼載入 GAS、跨網域 postMessage 握手、選擇藍牙出單機、
   assert.equal(await frame.inputValue('#pickerQtyNum'), '1');
   await frame.click('.picker-qty .qty-btn:not(.minus)');
   assert.equal(await frame.inputValue('#pickerQtyNum'), '2');
+  assert.equal(await frame.isVisible('#lineNoteBox'), false, '單品項備註預設收合');
+  await frame.click('#lineNoteToggle');
   await frame.click('.note-chip >> text=先做');
   assert.match(await frame.innerText('#pickerTotal'), /90 元/);
   await frame.click('#pickerMoreBtn'); // 加入並繼續點
@@ -118,6 +120,7 @@ test('外殼載入 GAS、跨網域 postMessage 握手、選擇藍牙出單機、
   await frame.waitForSelector('#orderOverlay.show');
   await frame.click('.item-btn[data-id="tea_jelly"]');
   await frame.waitForSelector('#itemOverlay.show');
+  await frame.click('#lineNoteToggle');
   await frame.click('.note-chip >> text=分開裝');
   await frame.click('#pickerDoneBtn');
   assert.equal(await frame.isVisible('#orderOverlay'), false);
@@ -269,9 +272,10 @@ test('條碼輸入：所有輸入欄位都有掃描按鈕，掃描結果帶回�
   await pickSource(frame, '現場點餐');
   await frame.click('.item-btn[data-id="cheese"]');
   await frame.waitForSelector('#itemOverlay.show');
+  await frame.click('#lineNoteToggle');
   await frame.click('#lineNoteInput + .scan-btn');
   await frame.waitForFunction(() => document.getElementById('lineNoteInput').value === 'ABC-123');
-  await frame.click('#itemOverlay .checkout-close');
+  await frame.evaluate(() => closeItemDialog());
 
   // 今日訂單：掃描小票 EAN13 → 自動查詢
   const o = JSON.parse(JSON.stringify(h.g.apiCreateOrder({ order_source: '現場點餐', items: [{ id: 'cheese', qty: 1 }], print: false }))).order;
@@ -294,9 +298,9 @@ test('條碼輸入：所有輸入欄位都有掃描按鈕，掃描結果帶回�
 
   // 取消掃描：欄位不變
   await frame.evaluate(() => { window.__nextScan = { status: 'cancel' }; });
-  await frame.click('#mCategory + .scan-btn');
+  await frame.click('#mBarcode + .scan-btn');
   await page.waitForTimeout(200);
-  assert.equal(await frame.inputValue('#mCategory'), '');
+  assert.equal(await frame.inputValue('#mBarcode'), '');
 
   const reqs = await frame.evaluate(() => window.__scanRequests);
   assert.ok(reqs.length >= 7 && reqs.every((r) => r.t === 'barcode-scan' && r.v === 1 && r.confirm === true && /^[0-9a-f]{32}$/.test(r.id)));
@@ -1001,6 +1005,93 @@ test('v1.14 主畫面按鈕：訂單暫存 / 訂單細項 / 訂單結帳 / 新�
   await page.waitForFunction(() => document.getElementById('reloadBtn').style.display === '');
   const rb = await page.evaluate(() => { const r = document.getElementById('reloadBtn').getBoundingClientRect(); return { r: r.right, t: r.top, w: innerWidth }; });
   assert.ok(rb.r >= rb.w - 10 && rb.t <= 10, '重新整理按鈕在右上角');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('v1.15 選品項畫面最上方條碼輸入；確認數量視窗：單品項備註按鈕、重新挑選 / 繼續挑選 / 回主訂單（無右上關閉）', async () => {
+  h.g.apiSaveMenuItem('1234', { id: 'tea_jelly', category: JSON.parse(JSON.stringify(h.g.apiAdminCatalog('1234'))).items.find((m) => m.id === 'tea_jelly').category, name: '茶凍', price: 30, barcode: '4710099' });
+  const { ctx, frame, errors } = await openPos(true, FAKE_SCANNER);
+  await frame.click('#newOrderBtn');
+  await pickSource(frame, '現場點餐');
+  await frame.waitForSelector('#orderOverlay.show');
+  const yb = await frame.evaluate(() => [document.querySelector('#orderOverlay .item-barcode-row').getBoundingClientRect().top, document.getElementById('pickerTitle').getBoundingClientRect().top]);
+  assert.ok(yb[0] < yb[1], '選品項的條碼輸入在最上方');
+  assert.equal(await frame.locator('#itemOverlay #itemBarcodeInput').count(), 0, '確認數量視窗不再有條碼列');
+  // 刷條碼直接選品項
+  await frame.fill('#itemBarcodeInput', '4710099');
+  await frame.press('#itemBarcodeInput', 'Enter');
+  await frame.waitForSelector('#itemOverlay.show');
+  assert.match(await frame.innerText('#pickerItem'), /茶凍/);
+  assert.equal(await frame.locator('#itemOverlay .checkout-close').count(), 0, '右上角關閉已移除');
+  assert.deepEqual(await frame.$$eval('#itemOverlay .item-foot .main-btn', (b) => b.filter((x) => x.offsetParent).map((x) => x.innerText.trim())), ['重新挑選', '繼續挑選', '回主訂單']);
+  await frame.click('#qtyQuick .qty-quick-btn[data-q="3"]');
+  // 重新挑選 → 用掃描按鈕刷條碼換品項（數量保留）
+  await frame.click('#pickerBackBtn');
+  await frame.waitForSelector('#orderOverlay.show');
+  await frame.evaluate(() => { window.__nextScan = { status: 'ok', text: 'custard', format: 'code_128', engine: 'mlkit' }; });
+  await frame.click('#itemBarcodeInput + .scan-btn');
+  await frame.waitForSelector('#itemOverlay.show');
+  assert.match(await frame.innerText('#pickerItem'), /卡士達/);
+  assert.equal(await frame.inputValue('#pickerQtyNum'), '1', '換品項與點選商品相同：數量從 1 開始');
+  await frame.click('#qtyQuick .qty-quick-btn[data-q="3"]');
+  // 查無條碼
+  await frame.click('#pickerBackBtn');
+  await frame.fill('#itemBarcodeInput', '0000000');
+  await frame.press('#itemBarcodeInput', 'Enter');
+  await frame.waitForFunction(() => document.getElementById('toast').innerText.includes('查無此條碼'));
+  await frame.click('.item-btn[data-id="custard"]');
+  // 單品項備註
+  assert.equal((await frame.innerText('#lineNoteToggle')).replace(/\s|▼|▲/g, ''), '單品項備註');
+  await frame.click('#lineNoteToggle');
+  await frame.click('.note-chip >> text=先做');
+  assert.match(await frame.innerText('#lineNoteToggle'), /（1）/);
+  await frame.click('#pickerDoneBtn');   // 回主訂單
+  assert.equal(await frame.evaluate(() => cartItems()[0].qty), 3);
+  assert.equal(await frame.evaluate(() => cartItems()[0].name), '卡士達');
+  // 修改：有備註時自動展開；按鈕為 重新挑選 / 刪除此項 / 回主訂單
+  await frame.click('#cartArea .cart-row', { button: 'right' });
+  assert.equal(await frame.isVisible('#lineNoteBox'), true);
+  assert.deepEqual(await frame.$$eval('#itemOverlay .item-foot .main-btn', (b) => b.filter((x) => x.offsetParent).map((x) => x.innerText.trim())), ['重新挑選', '刪除此項', '回主訂單']);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('v1.15 後台：商品分群 / 商品（條碼）/ 快速備註 新增修改刪除；已販售商品不能刪除與改名', async () => {
+  const { ctx, frame, errors } = await openPos(true);   // openPos 已自動按「確定」
+  await frame.click('button[data-tab="admin"]');
+  await frame.fill('#pinInput', '1234');
+  await frame.click('#pinOverlay .blue-btn');
+  await frame.click('.admin-subtab >> text=商品管理');
+  await frame.waitForSelector('#categoryAdminArea table');
+  await frame.fill('#cName', 'E2E分群');
+  await frame.click('text=儲存分群');
+  await frame.waitForFunction(() => document.getElementById('categoryAdminArea').innerText.includes('E2E分群'));
+  await frame.selectOption('#mCategory', 'E2E分群');
+  await frame.fill('#mName', 'E2E商品');
+  await frame.fill('#mPrice', '50');
+  await frame.fill('#mBarcode', '4719999');
+  await frame.click('text=儲存商品');
+  await frame.waitForFunction(() => document.getElementById('menuAdminArea').innerText.includes('E2E商品'));
+  // 已販售（卡士達）沒有刪除鈕、品名唯讀
+  const row = frame.locator('#menuAdminArea tr', { hasText: '卡士達' }).first();
+  assert.match(await row.innerText(), /已販售/);
+  assert.equal(await row.locator('.danger-btn').count(), 0);
+  await row.locator('.blue-btn').click();
+  assert.equal(await frame.getAttribute('#mName', 'readonly'), '');
+  await frame.click('text=清除表單');
+  // 刪除未販售商品，再刪空分群
+  await frame.locator('#menuAdminArea tr', { hasText: 'E2E商品' }).locator('.danger-btn').click();
+  await frame.waitForFunction(() => !document.getElementById('menuAdminArea').innerText.includes('E2E商品'));
+  await frame.locator('#categoryAdminArea tr', { hasText: 'E2E分群' }).locator('.danger-btn').click();
+  await frame.waitForFunction(() => !document.getElementById('categoryAdminArea').innerText.includes('E2E分群'));
+  // 快速備註：新增 → 刪除
+  await frame.click('.admin-subtab >> text=備註管理');
+  await frame.fill('#nText', 'E2E備註');
+  await frame.click('text=儲存備註');
+  await frame.waitForFunction(() => document.getElementById('noteAdminArea').innerText.includes('E2E備註'));
+  await frame.locator('#noteAdminArea tr', { hasText: 'E2E備註' }).locator('.danger-btn').click();
+  await frame.waitForFunction(() => !document.getElementById('noteAdminArea').innerText.includes('E2E備註'));
   assert.deepEqual(errors, []);
   await ctx.close();
 });
