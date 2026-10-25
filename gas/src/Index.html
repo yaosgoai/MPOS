@@ -54,7 +54,7 @@
       <div id="receiptPreview" class="receipt-preview"></div>
       </div>
       <textarea id="orderNoteInput" class="order-note" data-scan-longpress rows="2" placeholder="整張訂單備註（長按可掃條碼）" oninput="Draft.save()"></textarea>
-      <div class="total-box"><div class="total-label">總金額</div><div class="total-value" id="totalValue">0 元</div></div>
+      <div class="total-box"><div class="total-label"><span id="totalCount" class="total-count">共 0 項</span>總金額</div><div class="total-value" id="totalValue">0 元</div></div>
       <div class="action-row action-row-4">
         <button id="holdBtn" class="main-btn preview-btn" onclick="openQuickPay('hold')">訂單暫存</button>
         <button id="detailBtn" class="main-btn gray-btn" onclick="openOrderDetail()">訂單細項</button>
@@ -964,19 +964,20 @@ function renderCart(){
   Draft.save();
   var items=cartItems(), area=$('cartArea');
   if(items.length && lastOrder) showLastOrder(null);   // 開始點新單後，上一單列自動收起
-  var html='<div class="cart-grid"><div class="cart-head"><span>品名</span><span class="num">單價</span><span class="num">數量</span><span class="num">小計</span></div>';
+  var html='<div class="cart-grid"><div class="cart-head"><span class="c-no">項次</span><span>品名</span><span class="num">單價</span><span class="num">數量</span><span class="num">小計</span></div>';
   items.forEach(function(l, idx){
     var n=lineNote(l);
     html+='<div class="cart-row'+(idx%2?' alt':'')+'" data-key="'+escapeHtml(l.key)+'">'+
-      '<span class="c-name">'+escapeHtml(l.name)+(n?'<span class="line-note">※ '+escapeHtml(n)+'</span>':'')+'</span>'+
+      '<span class="c-no">'+(idx+1)+'</span><span class="c-name">'+escapeHtml(l.name)+(n?'<span class="line-note">※ '+escapeHtml(n)+'</span>':'')+'</span>'+
       '<span class="num c-price">'+(parseInt(l.price,10)||0)+'</span><span class="num c-qty">'+l.qty+'</span>'+
       '<span class="num c-sub">'+((parseInt(l.price,10)||0)*l.qty)+'</span></div>';
   });
-  var empty='<span></span><span class="num"></span><span class="num"></span><span class="num"></span>';
+  var empty='<span></span><span></span><span class="num"></span><span class="num"></span><span class="num"></span>';
   if(!items.length) html+='<div class="cart-row-empty">'+empty+'</div>';
   html+='<div class="cart-fill">'+empty+'</div>';
   html+=(items.length ? '' : '<div class="cart-hint">'+(orderSource ? '請按「＋'+escapeHtml(orderSource)+'」新購' : '請先按「＋訂單來源」開始新訂單')+'</div>')+'</div>';
   area.className=''; area.innerHTML=html; $('totalValue').innerText=money(total());
+  $('totalCount').innerText='共 '+items.length+' 項';
   area.querySelectorAll('.cart-row').forEach(function(row){
     bindLongPress(row, function(){ openOrderPicker(row.dataset.key); }, function(){ toast('長按品項可修改'); });
   });

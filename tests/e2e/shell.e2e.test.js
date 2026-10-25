@@ -127,9 +127,13 @@ test('外殼載入 GAS、跨網域 postMessage 握手、選擇藍牙出單機、
   assert.equal(await frame.locator('#cartArea .cart-row').count(), 2);
   assert.match(await frame.innerText('#cartArea'), /※ 先做[\s\S]*※ 分開裝/);
   assert.match(await frame.innerText('#totalValue'), /120 元/);
+  assert.equal(await frame.innerText('#totalCount'), '共 2 項');
+  assert.deepEqual(await frame.$$eval('#cartArea .cart-row .c-no', (x) => x.map((e) => e.innerText.trim())), ['1', '2']);
+  const tops4 = await frame.$$eval('.action-row-4 .main-btn', (b) => b.map((x) => Math.round(x.getBoundingClientRect().top)));
+  assert.equal(new Set(tops4).size, 1, '四個按鈕在同一列');
   // 修改項目 2：數量 +1
   assert.equal(await frame.locator('#cartArea .qty-btn').count(), 0, '主畫面不再有 +/-');
-  assert.deepEqual(await frame.$$eval('#cartArea .cart-head span', (x) => x.map((e) => e.innerText.trim())), ['品名', '單價', '數量', '小計']);
+  assert.deepEqual(await frame.$$eval('#cartArea .cart-head span', (x) => x.map((e) => e.innerText.trim())), ['項次', '品名', '單價', '數量', '小計']);
   await frame.click('#cartArea .cart-row >> nth=1');   // 短按只提示，不開視窗
   assert.equal(await frame.isVisible('#itemOverlay.show'), false);
   await frame.click('#cartArea .cart-row >> nth=1', { button: 'right' });   // 長按（觸控長按 / 滑鼠右鍵）
