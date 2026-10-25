@@ -56,10 +56,10 @@
       <textarea id="orderNoteInput" class="order-note" data-scan-longpress rows="2" placeholder="整張訂單備註（長按可掃條碼）" oninput="Draft.save()"></textarea>
       <div class="total-box"><div class="total-label">總金額</div><div class="total-value" id="totalValue">0 元</div></div>
       <div class="action-row action-row-4">
-        <button id="checkoutBtn" class="main-btn print-btn" onclick="openCheckout()">找零結帳</button>
-        <button id="quickPayBtn" class="main-btn blue-btn" onclick="openQuickPay('pay')">直接結帳</button>
         <button id="holdBtn" class="main-btn preview-btn" onclick="openQuickPay('hold')">訂單暫存</button>
-        <button id="resetBtn" class="main-btn clear-btn" onclick="resetDraft()">重新訂單</button>
+        <button id="detailBtn" class="main-btn gray-btn" onclick="openOrderDetail()">訂單細項</button>
+        <button id="checkoutBtn" class="main-btn print-btn" onclick="openCheckout()">訂單結帳</button>
+        <button id="resetBtn" class="main-btn clear-btn" onclick="resetDraft()">新訂單</button>
       </div>
     </section>
   </div>
@@ -436,50 +436,51 @@
 </section>
 
 <!-- ================= 結帳鍵盤 ================= -->
-<div id="checkoutOverlay" class="checkout-overlay">
-  <div class="checkout-modal">
-    <div class="checkout-head">
-      <div class="checkout-title">找零結帳</div>
-      <button class="checkout-close" onclick="closeCheckout()">關閉</button>
-    </div>
-    <div class="checkout-body">
-      <div class="checkout-left">
-        <div class="checkout-screen">
-          <div class="checkout-row"><span>應收金額</span><span id="checkoutTotal">0 元</span></div>
-          <div class="checkout-row"><span>收款金額</span><span></span></div>
-          <div id="checkoutReceived" class="checkout-input">0</div>
-          <div class="checkout-row big"><span>找零</span><span id="checkoutChange">尚未計算</span></div>
-        </div>
-        <div class="quick-cash">
-          <button class="key-btn" onclick="setExactCash()">剛好</button>
-          <button class="key-btn" onclick="setCashAmount(100)">$100</button>
-          <button class="key-btn" onclick="setCashAmount(500)">$500</button>
-          <button class="key-btn" onclick="setCashAmount(1000)">$1000</button>
-        </div>
+<div id="checkoutOverlay" class="checkout-overlay checkout-full-overlay">
+  <div class="checkout-modal checkout-full">
+    <div class="cf-left">
+      <div class="checkout-screen cf-screen">
+        <div class="cf-line"><span>應收</span><b id="checkoutTotal">0 元</b></div>
+        <div class="cf-line"><span>收款</span><b id="checkoutReceived" class="checkout-input">0</b></div>
+        <div class="cf-line cf-change"><span>找零</span><b id="checkoutChange">—</b></div>
       </div>
-      <div class="checkout-right">
-        <div class="keypad">
-          <button class="key-btn" onclick="keypadInput('7')">7</button>
-          <button class="key-btn" onclick="keypadInput('8')">8</button>
-          <button class="key-btn" onclick="keypadInput('9')">9</button>
-          <button class="key-btn" onclick="keypadInput('4')">4</button>
-          <button class="key-btn" onclick="keypadInput('5')">5</button>
-          <button class="key-btn" onclick="keypadInput('6')">6</button>
-          <button class="key-btn" onclick="keypadInput('1')">1</button>
-          <button class="key-btn" onclick="keypadInput('2')">2</button>
-          <button class="key-btn" onclick="keypadInput('3')">3</button>
-          <button class="key-btn" onclick="keypadInput('00')">00</button>
-          <button class="key-btn" onclick="keypadInput('0')">0</button>
-          <button class="key-btn fn" onclick="keypadBackspace()">退格</button>
-          <button class="key-btn fn" onclick="keypadClear()">清除</button>
-          <button class="key-btn calc span2" onclick="prepareCheckoutPayment()">計算找零</button>
-        </div>
-        <div class="checkout-actions">
-          <button id="checkoutConfirmBtn" class="key-btn confirm span-all" onclick="confirmCheckout(true)">確認結帳並列印</button>
-        </div>
+      <div class="quick-cash">
+        <button class="key-btn" onclick="setExactCash()">剛好</button>
+        <button class="key-btn" onclick="setCashAmount(100)">$100</button>
+        <button class="key-btn" onclick="setCashAmount(500)">$500</button>
+        <button class="key-btn" onclick="setCashAmount(1000)">$1000</button>
       </div>
     </div>
-    <div id="checkoutMsg" class="checkout-msg"></div>
+    <div class="cf-right">
+      <div class="keypad cf-keypad">
+        <button class="key-btn" onclick="keypadInput('7')">7</button>
+        <button class="key-btn" onclick="keypadInput('8')">8</button>
+        <button class="key-btn" onclick="keypadInput('9')">9</button>
+        <button class="key-btn" onclick="keypadInput('4')">4</button>
+        <button class="key-btn" onclick="keypadInput('5')">5</button>
+        <button class="key-btn" onclick="keypadInput('6')">6</button>
+        <button class="key-btn" onclick="keypadInput('1')">1</button>
+        <button class="key-btn" onclick="keypadInput('2')">2</button>
+        <button class="key-btn" onclick="keypadInput('3')">3</button>
+        <button class="key-btn" onclick="keypadInput('00')">00</button>
+        <button class="key-btn" onclick="keypadInput('0')">0</button>
+        <button class="key-btn fn" onclick="keypadBackspace()">⌫</button>
+      </div>
+      <div id="checkoutMsg" class="checkout-msg"></div>
+      <div class="cf-bottom">
+        <button class="key-btn fn" onclick="keypadClear()">清除</button>
+        <button id="checkoutConfirmBtn" class="key-btn confirm" onclick="confirmCheckout(true)">確認結帳並列印</button>
+        <button class="key-btn cf-close checkout-close" onclick="closeCheckout()">關閉</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 訂單細項 ================= -->
+<div id="detailOverlay" class="checkout-overlay">
+  <div class="checkout-modal detail-modal">
+    <div id="detailBody"></div>
+    <div class="cf-bottom detail-bottom"><button class="key-btn cf-close checkout-close" onclick="closeOrderDetail()">關閉</button></div>
   </div>
 </div>
 
@@ -522,7 +523,12 @@ var busy = false;
 function $(id){return document.getElementById(id);}
 function escapeHtml(s){return String(s == null ? '' : s).replace(/[&<>'"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c];});}
 function money(n){return (parseInt(n||0,10)||0) + ' 元';}
-function showMsg(id,type,text){var el=$(id);if(!el)return;el.className='message '+type;el.innerText=text;}
+function showMsg(id,type,text){
+  var el=$(id); if(!el) return;
+  // POS 主畫面：成功 / 進度訊息不佔版面（只有錯誤才顯示訊息框），內容記在 __posLog 供除錯與測試
+  if(id==='posMsg'){ window.__posLog=((window.__posLog||'')+'\n'+text).slice(-4000); if(type!=='err'){ el.className='message'; el.innerText=''; return; } }
+  el.className='message '+type; el.innerText=text;
+}
 function showReceipt(id,text){var el=$(id);if(!el)return;el.style.display='block';el.innerText=text||'';}
 function toast(text,ms){var t=$('toast');t.innerText=text;t.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove('show');},ms||2500);}
 
@@ -877,7 +883,6 @@ function savePickerLine(keepOpen){
     if(same) same.qty+=data.qty; else { data.key='L'+(++lineSeq); cart.push(data); }
   }
   renderCart();
-  toast('已加入：'+item.name+' x '+data.qty+(lineNote(data)?'（'+lineNote(data)+'）':''), 1500);
   $('itemOverlay').classList.remove('show');
   picker=null;
   if(keepOpen) openOrderPicker();
@@ -898,6 +903,7 @@ function renderCart(){
   if(document.activeElement!==$('customerNameInput')) $('customerNameInput').value = customerName || '';
   Draft.save();
   var items=cartItems(), area=$('cartArea');
+  if(items.length && lastOrder) showLastOrder(null);   // 開始點新單後，上一單列自動收起
   var html='<div class="cart-grid"><div class="cart-head"><span>品名</span><span class="num">單價</span><span class="num">數量</span><span class="num">小計</span></div>';
   items.forEach(function(l, idx){
     var n=lineNote(l);
@@ -909,8 +915,7 @@ function renderCart(){
   var empty='<span></span><span class="num"></span><span class="num"></span><span class="num"></span>';
   if(!items.length) html+='<div class="cart-row-empty">'+empty+'</div>';
   html+='<div class="cart-fill">'+empty+'</div>';
-  html+='<div class="cart-hint">'+(items.length ? '長按品項可修改數量、備註或刪除' :
-    (orderSource ? '尚未點選商品，請按「＋'+escapeHtml(orderSource)+'」新購' : '請先按「＋訂單來源」開始新訂單'))+'</div></div>';
+  html+=(items.length ? '' : '<div class="cart-hint">'+(orderSource ? '請按「＋'+escapeHtml(orderSource)+'」新購' : '請先按「＋訂單來源」開始新訂單')+'</div>')+'</div>';
   area.className=''; area.innerHTML=html; $('totalValue').innerText=money(total());
   area.querySelectorAll('.cart-row').forEach(function(row){
     bindLongPress(row, function(){ openOrderPicker(row.dataset.key); }, function(){ toast('長按品項可修改'); });
@@ -923,7 +928,7 @@ function clearCart(withMsg){
   if(withMsg){ showMsg('posMsg','ok','訂單清空新單'); $('receiptPreview').style.display='none'; }
 }
 function resetDraft(){
-  if(!cartItems().length && !orderSource && !customerPhone && !$('orderNoteInput').value.trim()){ clearCart(true); focusOrderCode(); return; }
+  if(!cartItems().length && !orderSource && !customerPhone && !$('orderNoteInput').value.trim()){ clearCart(true); showLastOrder(null); focusOrderCode(); return; }
   if(!confirm('確定要清空目前訂單，重新開始新訂單？已點的品項與備註都會清除。')) return;
   clearCart(true);
   showLastOrder(null);
@@ -1056,7 +1061,6 @@ async function createOrder(printFlag, pay, hold){
       }catch(pe){ printErr=pe.message; msg+='\n\n列印錯誤：'+printErr+'\n可到「今日訂單」按「補印」。'; }
     }
     showMsg('posMsg', printErr?'err':'ok', msg);
-    showReceipt('receiptPreview', o.receipt);
     closeCheckout(false);
     clearCart(false);
     showLastOrder(o);
@@ -1158,7 +1162,7 @@ async function refreshCalls(){
 }
 function renderCalls(){
   var el=$('callList');
-  if(!callList.length){ el.innerHTML='<span class="call-empty">今日尚無來電（長按號碼可新增訂單 / 查歷史）</span>'; return; }
+  if(!callList.length){ el.innerHTML='<span class="call-empty">今日尚無來電</span>'; return; }
   el.innerHTML=callList.map(function(c,i){
     return '<button class="call-chip'+(c.fresh?' fresh':'')+'" data-i="'+i+'">'+
       '<b>'+escapeHtml(c.name||'未命名')+'</b> <span>'+escapeHtml(c.phone_display||fmtPhone(c.phone))+'</span>'+(c.cancel_count?' <span class="cancel-warn">退單'+c.cancel_count+'</span>':'')+' <small>'+escapeHtml(String(c.called_at||'').slice(11,16))+(c.count_today>1?' ×'+c.count_today:'')+'</small></button>';
@@ -1423,8 +1427,8 @@ function showLastOrder(o){
   lastOrder=o||null;
   var el=$('lastOrderBar');
   if(!o){ el.style.display='none'; el.innerHTML=''; return; }
-  el.innerHTML='<span>剛建立：<b>'+escapeHtml(o.order_no)+'</b>　'+money(o.total)+'　'+escapeHtml(o.order_source||'')+'</span>'+
-    '<button type="button" class="small-btn danger-btn" id="lastOrderCancelBtn">取消此單</button>';
+  el.innerHTML='<span>上一單 <b>'+escapeHtml(o.order_no.slice(-4))+'</b>・'+money(o.total)+'</span>'+
+    '<button type="button" class="small-btn danger-btn" id="lastOrderCancelBtn">取消</button>';
   el.style.display='flex';
   $('lastOrderCancelBtn').onclick=function(){ openCancel(lastOrder, function(x){ showMsg('posMsg','ok','訂單 '+x.order_no+' 已取消（'+(CANCEL_TYPE_LABEL[x.cancel_type]||'')+'：'+x.cancel_reason+'）'); }); };
 }
@@ -1483,23 +1487,52 @@ function openCheckout(){
   if(!orderSource){ openSourcePicker(false); return; }
   checkoutCash='';checkoutChangeAmount=0;$('checkoutMsg').innerText='';
   $('checkoutTotal').innerText=money(total());
-  $('checkoutOverlay').classList.add('show'); updateCheckoutUi(false);
+  $('checkoutOverlay').classList.add('show'); updateCheckoutUi();
+  shellReloadBtn(false);
 }
-function closeCheckout(clear){ $('checkoutOverlay').classList.remove('show'); checkoutCash=''; if(clear!==false) $('checkoutMsg').innerText=''; }
-function updateCheckoutUi(calculated){ $('checkoutReceived').innerText=checkoutCash||'0'; $('checkoutChange').innerText=calculated?money(checkoutChangeAmount):'尚未計算'; }
-function keypadInput(v){ if(checkoutCash.length>=7)return; checkoutCash=(checkoutCash+String(v)).replace(/^0+(?=\d)/,''); updateCheckoutUi(false); }
-function keypadBackspace(){ checkoutCash=checkoutCash.slice(0,-1); updateCheckoutUi(false); }
-function keypadClear(){ checkoutCash=''; checkoutChangeAmount=0; $('checkoutMsg').innerText=''; updateCheckoutUi(false); }
+/** 全螢幕畫面時隱藏外殼右上角的重新整理按鈕 */
+function shellReloadBtn(show){ if(Bridge.inShell()) Bridge.call('uiReloadBtn', {show:!!show}, 2000).catch(function(){}); }
+
+/* ---------- 訂單細項（目前訂單的完整內容） ---------- */
+function openOrderDetail(){
+  var items=cartItems(), note=$('orderNoteInput').value.trim();
+  var info=[];
+  if(orderSource) info.push('<span class="src-badge">'+escapeHtml(orderSource)+'</span>');
+  if(loadedOrder) info.push('<span class="src-badge unpaid">暫存訂單 '+escapeHtml(loadedOrder.order_no)+'</span>');
+  if(customerPhone) info.push('<span class="dt-cust">'+escapeHtml([customerName||'', fmtPhone(customerPhone)].join(' ').trim())+'</span>');
+  var rows=items.map(function(l){
+    var n=lineNote(l), p=parseInt(l.price,10)||0;
+    return '<tr><td><b>'+escapeHtml(l.name)+'</b>'+(n?'<div class="line-note">※ '+escapeHtml(n)+'</div>':'')+'</td><td class="num-cell">'+p+'</td><td class="num-cell"><b>'+l.qty+'</b></td><td class="num-cell"><b>'+(p*l.qty)+'</b></td></tr>';
+  }).join('');
+  var qty=items.reduce(function(a,l){ return a+l.qty; },0);
+  $('detailBody').innerHTML=(info.length?'<div class="dt-info">'+info.join('')+'</div>':'')+
+    '<table class="dt-table"><thead><tr><th>品名</th><th class="num-cell">單價</th><th class="num-cell">數量</th><th class="num-cell">小計</th></tr></thead><tbody>'+
+    (rows||'<tr><td colspan="4" class="hint" style="text-align:center">尚無品項</td></tr>')+'</tbody></table>'+
+    (note?'<div class="dt-note">備註：'+escapeHtml(note)+'</div>':'')+
+    '<div class="dt-total"><span>共 '+qty+' 件</span><b>'+money(total())+'</b></div>';
+  $('detailOverlay').classList.add('show');
+}
+function closeOrderDetail(){ $('detailOverlay').classList.remove('show'); }
+function closeCheckout(clear){ $('checkoutOverlay').classList.remove('show'); shellReloadBtn(true); checkoutCash=''; if(clear!==false) $('checkoutMsg').innerText=''; }
+/** 即時計算找零（不需按「計算找零」）；收款不足時顯示還差多少 */
+function updateCheckoutUi(){
+  var due=total(), r=parseInt(checkoutCash||'0',10)||0, ch=$('checkoutChange');
+  $('checkoutReceived').innerText=checkoutCash||'0';
+  if(!checkoutCash){ ch.innerText='—'; ch.className=''; }
+  else if(r<due){ ch.innerText='還差 '+money(due-r); ch.className='short'; }
+  else { checkoutChangeAmount=r-due; ch.innerText=money(checkoutChangeAmount); ch.className='ok'; }
+}
+function keypadInput(v){ if(checkoutCash.length>=7)return; checkoutCash=(checkoutCash+String(v)).replace(/^0+(?=\d)/,''); $('checkoutMsg').innerText=''; updateCheckoutUi(); }
+function keypadBackspace(){ checkoutCash=checkoutCash.slice(0,-1); updateCheckoutUi(); }
+function keypadClear(){ checkoutCash=''; checkoutChangeAmount=0; $('checkoutMsg').innerText=''; updateCheckoutUi(); }
 function setCashAmount(a){ checkoutCash=String(a); prepareCheckoutPayment(); }
 function setExactCash(){ checkoutCash=String(total()); prepareCheckoutPayment(); }
 function prepareCheckoutPayment(){
   var due=total(), raw=String(checkoutCash||'').trim();
-  if(!raw){ checkoutCash=String(due); checkoutChangeAmount=0; updateCheckoutUi(true); $('checkoutMsg').innerText='未輸入收款金額，已自動設定為剛好 '+money(due)+'。'; return {ok:true,received:due,change_amount:0}; }
+  if(!raw){ checkoutCash=String(due); checkoutChangeAmount=0; updateCheckoutUi(); return {ok:true,received:due,change_amount:0}; }
   var received=parseInt(raw,10);
-  if(!(received>0)){ $('checkoutMsg').innerText='請輸入正確的收款金額，或直接按結帳視為剛好。'; updateCheckoutUi(false); return {ok:false}; }
-  if(received<due){ $('checkoutMsg').innerText='收款不足，還差 '+money(due-received)+'。'; updateCheckoutUi(false); return {ok:false}; }
-  checkoutChangeAmount=received-due; updateCheckoutUi(true);
-  $('checkoutMsg').innerText='已計算完成：收款 '+money(received)+'，找零 '+money(checkoutChangeAmount)+'。';
+  if(!(received>0) || received<due){ updateCheckoutUi(); return {ok:false}; }
+  checkoutChangeAmount=received-due; updateCheckoutUi();
   return {ok:true,received:received,change_amount:checkoutChangeAmount};
 }
 function confirmCheckout(printFlag){ var pay=prepareCheckoutPayment(); if(!pay.ok)return; createOrder(printFlag, pay); }

@@ -139,7 +139,7 @@ test('外殼載入 GAS、跨網域 postMessage 握手、選擇藍牙出單機、
   await frame.click('#checkoutBtn');
   await frame.click('.quick-cash >> text=$500');
   await frame.click('#checkoutConfirmBtn');
-  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('列印成功'));
+  await frame.waitForFunction(() => (window.__posLog || '').includes('列印成功'));
 
   const calls = await page.evaluate(() => window.__nativeCalls);
   const print = calls.find((c) => c.method === 'print');
@@ -178,8 +178,8 @@ test('一般瀏覽器（沒有 Android App）：可開單，列印失敗時提�
   await frame.click('#pickerDoneBtn');
   await frame.click('#checkoutBtn');
   await frame.click('#checkoutConfirmBtn'); // 未輸入收款 → 視為剛好
-  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('補印'));
-  assert.match(await frame.innerText('#posMsg'), /不是在 Android App 內/);
+  await frame.waitForFunction(() => (window.__posLog || '').includes('補印'));
+  assert.match(await frame.innerText('#posMsg'), /不是在 Android App 內/);  // 錯誤仍顯示訊息框
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -356,20 +356,20 @@ test('結帳（不找零）：確認是否列印 → 列印並結帳 / 不列印
   await setPrinter(page);
   const before = countOrders();
   await addLine(frame, 'cheese', 2);
-  await frame.click('#quickPayBtn');
+  await frame.evaluate(() => openQuickPay('pay'));   // 直接結帳已從主畫面移除，流程保留
   await frame.waitForSelector('#quickPayOverlay.show');
   assert.match(await frame.innerText('#quickPayTotal'), /90 元/);
   assert.equal(await frame.innerText('#quickPaySource'), '現場點餐');
   await frame.click('#quickPayPrintBtn');
-  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('列印成功'));
+  await frame.waitForFunction(() => (window.__posLog || '').includes('列印成功'));
   let calls = await page.evaluate(() => window.__nativeCalls.filter((c) => c.method === 'print'));
   assert.equal(calls.length, 1);
   assert.ok(calls[0].params.job.lines.some((l) => l.text === '【現場點餐】'));
 
   await addLine(frame, 'custard', 1);
-  await frame.click('#quickPayBtn');
+  await frame.evaluate(() => openQuickPay('pay'));   // 直接結帳已從主畫面移除，流程保留
   await frame.click('#quickPayNoPrintBtn');
-  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('訂單已建立'));
+  await frame.waitForFunction(() => (window.__posLog || '').includes('訂單已建立'));
   calls = await page.evaluate(() => window.__nativeCalls.filter((c) => c.method === 'print'));
   assert.equal(calls.length, 1, '不列印時不應送出列印');
   assert.equal(countOrders(), before + 2);
@@ -391,7 +391,7 @@ test('重置：清空目前單據（含訂單來源與備註）', async () => {
   await frame.waitForFunction(() => document.querySelectorAll('#cartArea .cart-row').length === 0);
   assert.equal(await frame.inputValue('#orderNoteInput'), '');
   assert.equal((await frame.innerText('#newOrderBtn')).replace(/\s/g, ''), '＋訂單來源');
-  assert.match(await frame.innerText('#posMsg'), /訂單清空新單/);
+  assert.equal(await frame.isVisible('#posMsg'), false, '重新訂單後不顯示訊息框');
   await frame.click('#newOrderBtn');
   await frame.waitForSelector('#sourceOverlay.show'); // 重置後要重新選來源
   await ctx.close();
@@ -416,9 +416,9 @@ test('本機暫存：重新整理後還原未結帳單據；結帳成功後清�
   assert.equal(await f2.inputValue('#orderNoteInput'), '先暫存');
   assert.equal(await f2.innerText('#sourceName'), '現場點餐');
 
-  await f2.click('#quickPayBtn');
+  await f2.evaluate(() => openQuickPay('pay'));
   await f2.click('#quickPayPrintBtn');
-  await f2.waitForFunction(() => document.getElementById('posMsg').innerText.includes('訂單已建立'));
+  await f2.waitForFunction(() => (window.__posLog || '').includes('訂單已建立'));
   assert.equal(countOrders(), before + 1);
   await page.waitForTimeout(400);
   assert.equal(await page.evaluate(() => localStorage.getItem('mpos_draft_v1')), null);
@@ -435,21 +435,21 @@ test('上傳失敗保留暫存，重試不會重複建單', async () => {
   await addLine(frame, 'cheese', 1);
   // 1) 網路中斷：伺服器沒收到
   h.ctl.failNext.add('apiCreateOrder');
-  await frame.click('#quickPayBtn');
+  await frame.evaluate(() => openQuickPay('pay'));   // 直接結帳已從主畫面移除，流程保留
   await frame.click('#quickPayNoPrintBtn');
-  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('仍暫存在本機'));
+  await frame.waitForFunction(() => (window.__posLog || '').includes('仍暫存在本機'));
   assert.equal(await frame.locator('#cartArea .cart-row').count(), 1);
   assert.equal(countOrders(), before);
   // 2) 伺服器已建單但回應遺失
   h.ctl.dropResponse.add('apiCreateOrder');
-  await frame.click('#quickPayBtn');
+  await frame.evaluate(() => openQuickPay('pay'));   // 直接結帳已從主畫面移除，流程保留
   await frame.click('#quickPayNoPrintBtn');
-  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('連線逾時'));
+  await frame.waitForFunction(() => (window.__posLog || '').includes('連線逾時'));
   assert.equal(countOrders(), before + 1);
   // 3) 重試：同一張單只會有一筆
-  await frame.click('#quickPayBtn');
+  await frame.evaluate(() => openQuickPay('pay'));   // 直接結帳已從主畫面移除，流程保留
   await frame.click('#quickPayNoPrintBtn');
-  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('重送'));
+  await frame.waitForFunction(() => (window.__posLog || '').includes('重送'));
   assert.equal(countOrders(), before + 1);
   assert.equal(await frame.locator('#cartArea .cart-row').count(), 0);
   await ctx.close();
@@ -509,7 +509,7 @@ test('掛單（未付款）→ 訂單條碼叫回 → 找零結帳（同一單�
   await frame.waitForSelector('#quickPayOverlay.show');
   assert.equal(await frame.innerText('#quickPayTitle'), '訂單暫存（未付款）');
   await frame.click('#quickPayPrintBtn');
-  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('已暫存訂單'));
+  await frame.waitForFunction(() => (window.__posLog || '').includes('已暫存訂單'));
   const held = JSON.parse(JSON.stringify(h.g.apiOrders(''))).orders[0];
   assert.equal(held.pay_status, 'unpaid');
   const job = (await page.evaluate(() => window.__nativeCalls.filter((c) => c.method === 'print'))).pop().params.job;
@@ -524,7 +524,7 @@ test('掛單（未付款）→ 訂單條碼叫回 → 找零結帳（同一單�
   await frame.click('#checkoutBtn');
   await frame.click('.quick-cash >> text=$500');
   await frame.click('#checkoutConfirmBtn');
-  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('訂單已結帳'));
+  await frame.waitForFunction(() => (window.__posLog || '').includes('訂單已結帳'));
   const paid = JSON.parse(JSON.stringify(h.g.apiLookup(held.order_no))).order;
   assert.equal(paid.pay_status, 'paid');
   assert.equal(paid.total, 120);
@@ -564,7 +564,7 @@ test('來電：清單顯示、長按新增來電點餐（記錄電話 / 名稱�
   await frame.click('#pickerDoneBtn');
   await frame.click('#holdBtn');
   await frame.click('#quickPayNoPrintBtn');
-  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('已暫存訂單'));
+  await frame.waitForFunction(() => (window.__posLog || '').includes('已暫存訂單'));
   const o = JSON.parse(JSON.stringify(h.g.apiOrders(''))).orders[0];
   assert.deepEqual([o.order_source, o.customer_phone, o.customer_name, o.pay_status], ['來電點餐', '0912000111', '陳小姐', 'unpaid']);
 
@@ -706,7 +706,7 @@ test('v1.5 條碼設定立即生效（不必按儲存）；訂單條碼刷完（
   await addLine(f2, 'custard', 1);
   await f2.click('#holdBtn');
   await f2.click('#quickPayPrintBtn');
-  await f2.waitForFunction(() => document.getElementById('posMsg').innerText.includes('已暫存訂單'));
+  await f2.waitForFunction(() => (window.__posLog || '').includes('已暫存訂單'));
   const held = JSON.parse(JSON.stringify(h.g.apiOrders(''))).orders[0];
   await f2.fill('#orderCodeInput', h.g.barcodeNoToEan13(held.barcode_no));
   await f2.waitForFunction(() => document.getElementById('loadedOrderTag').innerText.includes('未付款'));
@@ -773,7 +773,7 @@ test('v1.6 重置：游標移到訂單條碼並清空；列印時訂單來源在
   await frame.waitForFunction(() => document.activeElement.id === 'orderCodeInput' && document.getElementById('orderCodeInput').value === '');
 
   await addLine(frame, 'custard', 1);
-  await frame.click('#quickPayBtn');
+  await frame.evaluate(() => openQuickPay('pay'));   // 直接結帳已從主畫面移除，流程保留
   await frame.click('#quickPayPrintBtn');
   await page.waitForFunction(() => window.__nativeCalls.some((c) => c.method === 'print'));
   const job = (await page.evaluate(() => window.__nativeCalls.filter((c) => c.method === 'print'))).pop().params.job;
@@ -790,7 +790,7 @@ test('v1.7 取消訂單：結帳後直接取消（需選誰取消 + 原因），
   const { ctx, page, frame, errors } = await openPos(true);
   await setPrinter(page);
   await addLine(frame, 'custard', 2);
-  await frame.click('#quickPayBtn');
+  await frame.evaluate(() => openQuickPay('pay'));   // 直接結帳已從主畫面移除，流程保留
   await frame.click('#quickPayPrintBtn');
   await frame.waitForSelector('#lastOrderBar', { state: 'visible' });
   const orderNo = await frame.evaluate(() => lastOrder.order_no);
@@ -818,7 +818,7 @@ test('v1.7 取消訂單：結帳後直接取消（需選誰取消 + 原因），
 
   // 後台今日訂單：已完成的單也能取消；顯示註記（只操作本測試建立的訂單，不受其他測試資料影響）
   await addLine(frame, 'tea_jelly', 1);
-  await frame.click('#quickPayBtn');
+  await frame.evaluate(() => openQuickPay('pay'));   // 直接結帳已從主畫面移除，流程保留
   await frame.click('#quickPayNoPrintBtn');
   await frame.waitForSelector('#lastOrderBar', { state: 'visible' });
   const no2 = await frame.evaluate(() => lastOrder.order_no);
@@ -863,7 +863,7 @@ test('v1.7 取消訂單：叫回的掛單可取消並清空；客戶退單次數
   await frame.click('#pickerDoneBtn');
   await frame.click('#holdBtn');
   await frame.click('#quickPayPrintBtn');
-  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('已暫存訂單'));
+  await frame.waitForFunction(() => (window.__posLog || '').includes('已暫存訂單'));
   const held = JSON.parse(JSON.stringify(h.g.apiOrders(''))).orders.find((x) => x.customer_phone === '0933444555');
   await frame.fill('#orderCodeInput', held.order_no);
   await frame.press('#orderCodeInput', 'Enter');
@@ -874,7 +874,7 @@ test('v1.7 取消訂單：叫回的掛單可取消並清空；客戶退單次數
   await frame.click('#cancelOverlay .cancel-type[data-type="customer"]');
   await frame.click('#cancelReasons .cancel-reason >> text=客戶未取餐');
   await frame.click('#cancelConfirmBtn');
-  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('已取消'));
+  await frame.waitForFunction(() => (window.__posLog || '').includes('已取消'));
   assert.equal(await frame.evaluate(() => !!loadedOrder || cartItems().length > 0), false);
   assert.equal(await frame.isVisible('#cancelLoadedBtn'), false);
 
@@ -895,7 +895,7 @@ test('v1.7 取消訂單：叫回的掛單可取消並清空；客戶退單次數
 test('v1.10 ＋訂單來源 / ＋新購同一顆按鈕；訂單號碼長按：刷訂單條碼 / 帶暫存訂單；按鈕改名', async () => {
   const { ctx, page, frame, errors } = await openPos(true, FAKE_SCANNER);
   await setPrinter(page);
-  assert.deepEqual(await frame.$$eval('.action-row-4 .main-btn', (b) => b.map((x) => x.innerText.trim())), ['找零結帳', '直接結帳', '訂單暫存', '重新訂單']);
+  assert.deepEqual(await frame.$$eval('.action-row-4 .main-btn', (b) => b.map((x) => x.innerText.trim())), ['訂單暫存', '訂單細項', '訂單結帳', '新訂單']);
   assert.equal(await frame.locator('#sourceBar').count(), 0);
   assert.equal(await frame.locator('.pos-bar .scan-btn').count(), 0, '訂單號碼旁不再有條碼按鈕');
   assert.equal((await frame.innerText('#newOrderBtn')).replace(/\s/g, ''), '＋訂單來源');
@@ -911,7 +911,7 @@ test('v1.10 ＋訂單來源 / ＋新購同一顆按鈕；訂單號碼長按：�
   // 訂單暫存
   await frame.click('#holdBtn');
   await frame.click('#quickPayNoPrintBtn');
-  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('已暫存訂單'));
+  await frame.waitForFunction(() => (window.__posLog || '').includes('已暫存訂單'));
   const held = JSON.parse(JSON.stringify(h.g.apiHeldOrders(7))).orders[0];
   // 長按訂單號碼 → 帶暫存訂單
   await frame.click('#orderCodeInput', { button: 'right' });
@@ -926,7 +926,8 @@ test('v1.10 ＋訂單來源 / ＋新購同一顆按鈕；訂單號碼長按：�
   // 重新訂單 → 全部清空、回到 ＋訂單來源
   await frame.fill('#orderCodeInput', '123');
   await frame.click('#resetBtn');
-  await frame.waitForFunction(() => document.getElementById('posMsg').innerText.includes('訂單清空新單'));
+  await frame.waitForFunction(() => !cartItems().length && !loadedOrder);
+  assert.equal(await frame.isVisible('#posMsg'), false);
   assert.equal(await frame.inputValue('#orderCodeInput'), '');
   assert.equal((await frame.innerText('#newOrderBtn')).replace(/\s/g, ''), '＋訂單來源');
   assert.equal(await frame.evaluate(() => cartItems().length + (loadedOrder ? 1 : 0)), 0);
@@ -963,6 +964,43 @@ test('v1.11 確認數量：1~9 快速鍵、＋/－、直接輸入數量（預設
   await frame.click('#qtyQuick .qty-quick-btn[data-q="3"]');
   await frame.click('#pickerDoneBtn');
   assert.equal(await frame.evaluate(() => cartItems()[0].qty), 3);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('v1.14 主畫面按鈕：訂單暫存 / 訂單細項 / 訂單結帳 / 新訂單；找零結帳全螢幕、關閉在右下角、即時找零', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await ctx.addInitScript(FAKE_ANDROID);
+  const page = await ctx.newPage();
+  const errors = []; page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto(h.shellUrl);
+  const frame = await waitPos(page);
+  assert.equal(await frame.locator('#quickPayBtn').count(), 0, '直接結帳按鈕已移除');
+  await addLine(frame, 'custard', 2);
+  await frame.fill('#orderNoteInput', '18:30 取');
+  // 訂單細項
+  await frame.click('#detailBtn');
+  await frame.waitForSelector('#detailOverlay.show');
+  const dt = await frame.innerText('#detailBody');
+  assert.match(dt, /卡士達/); assert.match(dt, /共 2 件/); assert.match(dt, /90 元/); assert.match(dt, /18:30 取/);
+  await frame.click('#detailOverlay .cf-close');
+  // 訂單結帳（找零）：全螢幕
+  await frame.click('#checkoutBtn');
+  await frame.waitForSelector('#checkoutOverlay.show');
+  const box = await frame.evaluate(() => { const r = document.querySelector('#checkoutOverlay .checkout-full').getBoundingClientRect(); const c = document.querySelector('#checkoutOverlay .cf-close').getBoundingClientRect(); return { w: r.width, h: r.height, iw: innerWidth, ih: innerHeight, cr: c.right, cb: c.bottom }; });
+  assert.ok(box.w >= box.iw - 1 && box.h >= box.ih - 1, '找零畫面要佔滿螢幕 ' + JSON.stringify(box));
+  assert.ok(box.cr >= box.iw - 20 && box.cb >= box.ih - 20, '關閉按鈕在右下角 ' + JSON.stringify(box));
+  assert.equal(await frame.locator('#checkoutOverlay .checkout-title').count(), 0);
+  await page.waitForFunction(() => document.getElementById('reloadBtn').style.display === 'none');
+  await frame.click('.cf-keypad .key-btn >> text=5');
+  assert.match(await frame.innerText('#checkoutChange'), /還差 85 元/);
+  await frame.click('.cf-keypad .key-btn >> text=00');
+  assert.equal(await frame.innerText('#checkoutChange'), '410 元', '即時計算找零');
+  await frame.click('#checkoutOverlay .cf-close');
+  await frame.waitForSelector('#checkoutOverlay.show', { state: 'hidden' });
+  await page.waitForFunction(() => document.getElementById('reloadBtn').style.display === '');
+  const rb = await page.evaluate(() => { const r = document.getElementById('reloadBtn').getBoundingClientRect(); return { r: r.right, t: r.top, w: innerWidth }; });
+  assert.ok(rb.r >= rb.w - 10 && rb.t <= 10, '重新整理按鈕在右上角');
   assert.deepEqual(errors, []);
   await ctx.close();
 });

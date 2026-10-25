@@ -16,7 +16,7 @@
   #overlayTitle{font-size:24px;font-weight:900}
   #overlayMsg{font-size:15px;max-width:520px;white-space:pre-wrap;color:#735c3f}
   .btn{border:0;border-radius:12px;padding:12px 22px;font-size:18px;font-weight:900;background:var(--main);color:#fff;cursor:pointer}
-  #reloadBtn{position:fixed;left:6px;bottom:6px;z-index:5;width:34px;height:34px;border-radius:50%;border:0;background:rgba(94,40,8,.25);color:#fff;font-size:18px;cursor:pointer}
+  #reloadBtn{position:fixed;right:6px;top:6px;z-index:5;width:32px;height:32px;border-radius:50%;border:0;background:rgba(255,255,255,.18);color:#fff;font-size:18px;cursor:pointer}
   #updateBar{display:none;position:fixed;right:8px;bottom:8px;z-index:6;background:#1f5e9e;color:#fff;border-radius:12px;padding:10px 14px;font-weight:900;box-shadow:0 6px 16px rgba(0,0,0,.25)}
   #updateBar a{color:#fff}
 </style>
@@ -161,6 +161,12 @@
     }
 
     // 本機偏好設定（畫面縮放、條碼確認方式）：存在外殼網域，App 重開仍保留
+    if(d.method === 'uiReloadBtn'){
+      var rb = document.getElementById('reloadBtn');
+      if(rb) rb.style.display = (d.params && d.params.show) ? '' : 'none';
+      reply(ev.source, ev.origin, d.id, true, {ok: true});
+      return;
+    }
     if(d.method === 'prefSave' || d.method === 'prefLoad'){
       try{
         var pk = 'mpos_pref_' + String((d.params && d.params.key) || '').replace(/[^\w]/g, '');

@@ -406,4 +406,37 @@ body.measuring #tab-pos .pos-scroll{flex:none;height:110px;min-height:0}
 .cart-row-empty > span:first-child,.cart-fill > span:first-child{border-left:0}
 .cart-hint{flex:none}
 body.measuring #tab-pos #cartArea,body.measuring #tab-pos .cart-grid{flex:none;min-height:0}
+
+.last-order-bar{flex-wrap:nowrap;padding:3px 8px;margin-top:6px;border-width:1px;font-size:var(--fs-xs)}
+.last-order-bar .small-btn{padding:4px 10px;margin:0}
+
+/* ---- v1.14：找零結帳全螢幕、關閉在右下角；訂單細項 ---- */
+.checkout-full-overlay{padding:0!important}
+.checkout-modal.checkout-full{width:100vw;max-width:none;height:100vh;height:100dvh;max-height:none;border-radius:0;border:0;display:flex;flex-direction:column;gap:10px;padding:12px;overflow:hidden}
+.checkout-full .cf-left,.checkout-full .cf-right{display:flex;flex-direction:column;gap:10px;min-height:0}
+.checkout-full .cf-right{flex:1}
+.cf-screen{margin:0}
+.cf-line{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:var(--fs-xl);font-weight:900}
+.cf-line b{font-size:clamp(28px,8vw,48px)}
+.cf-line .checkout-input{margin:0;padding:2px 12px;min-width:50%;text-align:right;font-size:clamp(32px,9vw,56px)}
+.cf-change b.ok{color:var(--ok)}.cf-change b.short{color:var(--danger);font-size:clamp(22px,6vw,36px)}
+.checkout-full .quick-cash{margin:0}
+.checkout-full .quick-cash .key-btn{font-size:var(--fs-lg);padding:12px 4px}
+.cf-keypad{flex:1;grid-auto-rows:1fr;min-height:0}
+.cf-keypad .key-btn{font-size:clamp(26px,7vw,40px);padding:0}
+.cf-bottom{display:grid;grid-template-columns:1fr 2fr 1fr;gap:8px}
+.cf-bottom .key-btn{font-size:var(--fs-lg);padding:14px 6px;grid-column:auto}
+.cf-close{background:#666;color:#fff;border-color:#666}
+.checkout-full .checkout-msg:empty{display:none}
+@media (min-width:700px){ .checkout-modal.checkout-full{flex-direction:row;padding:20px;gap:20px} .checkout-full .cf-left{flex:1;justify-content:center} }
+.detail-modal{width:min(640px,100%);display:flex;flex-direction:column;gap:10px}
+.dt-info{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.dt-cust{font-weight:900;color:var(--danger)}
+.dt-table th{background:var(--main);color:#fff}
+.dt-table td,.dt-table th{font-size:var(--fs-md)}
+.dt-note{padding:8px 10px;border-radius:10px;background:#fff0c8;font-weight:900;white-space:pre-wrap}
+.dt-total{display:flex;justify-content:space-between;align-items:center;font-size:var(--fs-lg);font-weight:900}
+.dt-total b{font-size:var(--fs-2xl);color:var(--danger)}
+.detail-bottom{grid-template-columns:1fr auto}
+.detail-bottom .cf-close{grid-column:2;min-width:120px}
 </style>
