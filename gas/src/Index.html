@@ -11,7 +11,7 @@
 <div id="loadingMask" class="loading-mask">POS 資料載入中...</div>
 
 <header>
-  <div class="header-title"><span id="shopNameTitle">茉莉花鯛魚燒</span> POS 出單系統</div>
+  <div class="header-title"><span id="shopNameTitle">茉莉花鯛魚燒</span> POS</div>
   <div class="header-sub" style="display:none"><span id="shopAddressHeader"></span><span id="shopPhoneHeader"></span></div>
 </header>
 
@@ -48,7 +48,7 @@
         <button class="small-btn blue-btn" onclick="showHistory(customerPhone)">歷史</button>
       </div>
       <div class="pos-scroll" id="posScroll">
-      <div id="cartArea" class="cart-empty">請先按「＋訂單來源」開始新訂單</div>
+      <div id="cartArea"></div>
       <div id="lastOrderBar" class="last-order-bar" style="display:none"></div>
       <div id="posMsg" class="message"></div>
       <div id="receiptPreview" class="receipt-preview"></div>
@@ -898,7 +898,6 @@ function renderCart(){
   if(document.activeElement!==$('customerNameInput')) $('customerNameInput').value = customerName || '';
   Draft.save();
   var items=cartItems(), area=$('cartArea');
-  if(!items.length){ area.className='cart-empty'; area.innerHTML= orderSource ? '尚未點選商品，請按「＋'+escapeHtml(orderSource)+'」新購' : '請先按「＋訂單來源」開始新訂單'; $('totalValue').innerText='0 元'; return; }
   var html='<div class="cart-grid"><div class="cart-head"><span>品名</span><span class="num">單價</span><span class="num">數量</span><span class="num">小計</span></div>';
   items.forEach(function(l, idx){
     var n=lineNote(l);
@@ -907,7 +906,11 @@ function renderCart(){
       '<span class="num c-price">'+(parseInt(l.price,10)||0)+'</span><span class="num c-qty">'+l.qty+'</span>'+
       '<span class="num c-sub">'+((parseInt(l.price,10)||0)*l.qty)+'</span></div>';
   });
-  html+='<div class="cart-hint">長按品項可修改數量、備註或刪除</div></div>';
+  var empty='<span></span><span class="num"></span><span class="num"></span><span class="num"></span>';
+  if(!items.length) html+='<div class="cart-row-empty">'+empty+'</div>';
+  html+='<div class="cart-fill">'+empty+'</div>';
+  html+='<div class="cart-hint">'+(items.length ? '長按品項可修改數量、備註或刪除' :
+    (orderSource ? '尚未點選商品，請按「＋'+escapeHtml(orderSource)+'」新購' : '請先按「＋訂單來源」開始新訂單'))+'</div></div>';
   area.className=''; area.innerHTML=html; $('totalValue').innerText=money(total());
   area.querySelectorAll('.cart-row').forEach(function(row){
     bindLongPress(row, function(){ openOrderPicker(row.dataset.key); }, function(){ toast('長按品項可修改'); });

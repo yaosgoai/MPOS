@@ -394,4 +394,16 @@ body.measuring #tab-pos .pos-scroll{flex:none;height:110px;min-height:0}
 .qty-quick-btn:active{transform:scale(.96)}
 .qty-quick-btn.active{background:var(--main);border-color:var(--main);color:#fff}
 @media (max-width:420px){ .qty-quick{grid-template-columns:repeat(9,minmax(0,1fr));gap:4px} .qty-quick-btn{font-size:var(--fs-lg)} }
+
+/* ---- v1.12：品項表格永遠顯示（沒有資料也顯示），並填滿中間區域 ---- */
+#tab-pos .pos-scroll{display:flex;flex-direction:column}
+#tab-pos #cartArea{flex:1 0 auto;display:flex;flex-direction:column;min-height:0}
+#tab-pos .cart-grid{flex:1 0 auto;display:flex;flex-direction:column;min-height:120px}
+.cart-row-empty,.cart-fill{display:grid;grid-template-columns:minmax(0,1fr) 4em 3.6em 4.4em}
+.cart-row-empty{min-height:3em;border-top:1px solid #f0dfc2}
+.cart-fill{flex:1 0 0;min-height:0;border-top:1px solid #f0dfc2}
+.cart-row-empty > span,.cart-fill > span{border-left:1px dashed #ead5b5}
+.cart-row-empty > span:first-child,.cart-fill > span:first-child{border-left:0}
+.cart-hint{flex:none}
+body.measuring #tab-pos #cartArea,body.measuring #tab-pos .cart-grid{flex:none;min-height:0}
 </style>
